@@ -78,6 +78,7 @@ class ProbabilityEstimate(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    id: UUID = Field(default_factory=uuid4)
     market_id: str
     token_id: str
     outcome: Outcome

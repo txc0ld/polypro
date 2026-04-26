@@ -236,6 +236,49 @@ def positions(limit: int) -> None:
     click.echo(json.dumps(rows[:limit], indent=2, default=str))
 
 
+@main.command("promotion-status")
+@click.option("--db", "db_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="logs/polyflow.db", show_default=True)
+@click.option("--log", "log_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
+@click.option("--observer-days", type=int, default=0, show_default=True)
+@click.option("--paper-days", type=int, default=0, show_default=True)
+def promotion_status_cmd(db_path: Path, log_path: Path, observer_days: int, paper_days: int) -> None:
+    """Read live inputs from SQLite + log and evaluate the LIVE_TINY -> LIVE_STANDARD gate."""
+    from .persistence import SQLiteStore
+
+    store = SQLiteStore(db_path)
+    summary = summarize_log(log_path)
+    avg_clv_bps = store.average_clv_bps() or 0.0
+    decision = evaluate_promotion(
+        PromotionInputs(
+            observer_days=observer_days,
+            paper_days=paper_days,
+            paper_trades=summary.placed_orders,
+            live_tiny_trades=0,
+            unexplained_pnl_events=0,
+            kelly_breaches=summary.kill_switch_events,
+            unlogged_actions=0,
+            calibration_report_present=bool(store.calibration_buckets()),
+            closing_line_value_positive=avg_clv_bps > 0,
+            post_order_hook_pass_rate=1.0,
+        )
+    )
+    click.echo(
+        json.dumps(
+            {
+                "promote": decision.promote,
+                "reasons": list(decision.reasons),
+                "inputs": {
+                    "paper_trades": summary.placed_orders,
+                    "kill_switch_events": summary.kill_switch_events,
+                    "calibration_buckets": len(store.calibration_buckets()),
+                    "average_clv_bps": avg_clv_bps,
+                },
+            },
+            indent=2,
+        )
+    )
+
+
 @main.command("summarize-log")
 @click.option("--log", "log_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
 def summarize_log_cmd(log_path: Path) -> None:

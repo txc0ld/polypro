@@ -139,6 +139,41 @@ async def test_full_paper_run_places_order_and_logs(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_probability_estimate_persisted_to_store(tmp_path: Path) -> None:
+    """Once SQLiteStore is wired in, every evaluated candidate persists its estimate."""
+    from polyflow.persistence import SQLiteStore
+
+    market = _market()
+    est = _estimate(market)
+    sig = _signal(market, est)
+
+    policy = Policy()
+    policy.mode = Mode.LIVE_TINY
+
+    store = SQLiteStore(":memory:")
+    store.upsert_market(market, status="watching")
+
+    rt = Runtime(
+        policy=policy,
+        gamma=StubGammaAdapter([market]),
+        clob=PaperCLOBAdapter(),
+        logger=ImmutableLogger(tmp_path / "imm.jsonl"),
+        state=RiskState(bankroll_usdc=policy.risk.bankroll_usdc),
+        store=store,
+    )
+    await rt.evaluate_candidate(
+        signal=sig,
+        estimate=est,
+        market=market,
+        strategy=Strategy.EXTERNAL_ODDS_DIVERGENCE,
+    )
+    persisted = store.get_probability_estimates(market.id)
+    assert len(persisted) == 1
+    assert persisted[0]["outcome"] == est.outcome.value
+    assert float(persisted[0]["model_probability"]) == est.model_probability
+
+
+@pytest.mark.asyncio
 async def test_observe_mode_blocks_placement(tmp_path: Path) -> None:
     market = _market()
     est = _estimate(market)

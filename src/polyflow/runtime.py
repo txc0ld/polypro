@@ -24,6 +24,8 @@ from .risk_governor import KillSwitch, evaluate
 from .signals import decide_action, score_signal
 from .subagents import SubagentScheduler, SubagentTask
 from .subagents.heartbeat import Heartbeat
+from .subagents.order_sync import OrderSync
+from .subagents.resolution_monitor import ResolutionMonitor
 from .types import (
     Mode,
     OrderType,
@@ -125,6 +127,20 @@ class Runtime:
         )
         if self.store is not None:
             self.store.insert_signal(signal)
+            # Persist the underlying probability estimate so the resolution monitor
+            # can pair it with the eventual outcome for calibration.
+            self.store.insert_probability_estimate(
+                estimate_id=str(estimate.id),
+                market_id=estimate.market_id,
+                token_id=estimate.token_id,
+                outcome=estimate.outcome.value,
+                market_price=estimate.market_price,
+                model_probability=estimate.model_probability,
+                uncertainty=estimate.uncertainty,
+                edge_after_costs=estimate.edge_after_costs,
+                source_confidence=estimate.source_confidence,
+                resolution_risk=estimate.resolution_risk,
+            )
 
         if signal.status in ("REJECT", "WATCH"):
             return {"placed": False, "reason": signal.status}
@@ -230,9 +246,14 @@ def build_default_runtime(policy: Policy, log_path: str, *, db_path: str | None 
     )
 
 
-async def run_forever(rt: Runtime, *, scan_seconds: int = 300) -> None:
+async def run_forever(
+    rt: Runtime,
+    *,
+    scan_seconds: int = 300,
+    resolution_seconds: int = 900,
+    order_sync_seconds: int = 30,
+) -> None:
     """Minimal 24/7 loop. Subagent cadences run via the scheduler in production."""
-    # Wire the heartbeat + scheduler if either is configured.
     if rt.heartbeat is not None:
         rt.scheduler.register(SubagentTask(name="heartbeat", period_seconds=10.0, fn=rt.heartbeat.tick))
     rt.scheduler.register(
@@ -242,10 +263,55 @@ async def run_forever(rt: Runtime, *, scan_seconds: int = 300) -> None:
             fn=lambda: _safe_scan(rt),
         )
     )
+
+    # Resolution monitor closes the calibration loop — only register if we have a store.
+    if rt.store is not None:
+        resolution = ResolutionMonitor(gamma=rt.gamma, store=rt.store)
+
+        async def _safe_resolution() -> None:
+            try:
+                await resolution.tick()
+            except Exception as exc:  # noqa: BLE001
+                rt.incidents.trip_degraded(
+                    code="RESOLUTION_TICK_FAILED", detail=str(exc), actor="resolution_monitor"
+                )
+                raise
+
+        rt.scheduler.register(
+            SubagentTask(
+                name="resolution_monitor",
+                period_seconds=float(resolution_seconds),
+                fn=_safe_resolution,
+            )
+        )
+
+    # Order sync runs against any CLOB adapter that exposes get_open_orders.
+    if rt.store is not None and hasattr(rt.clob, "get_open_orders"):
+        order_sync = OrderSync(
+            adapter=rt.clob,  # type: ignore[arg-type]
+            store=rt.store,
+            incidents=rt.incidents,
+        )
+
+        async def _safe_order_sync() -> None:
+            try:
+                await order_sync.tick()
+            except Exception as exc:  # noqa: BLE001
+                rt.incidents.trip_degraded(
+                    code="ORDER_SYNC_TICK_FAILED", detail=str(exc), actor="order_sync"
+                )
+
+        rt.scheduler.register(
+            SubagentTask(
+                name="order_sync",
+                period_seconds=float(order_sync_seconds),
+                fn=_safe_order_sync,
+            )
+        )
+
     await rt.scheduler.start()
     try:
-        # Park the main task until something kills the runtime.
-        while rt.incidents.state.value not in ("killed",):
+        while rt.incidents.state.value != "killed":
             await asyncio.sleep(1.0)
     finally:
         await rt.scheduler.stop()
