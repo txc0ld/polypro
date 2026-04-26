@@ -1,6 +1,7 @@
 import { Card, Stat } from "@/components/Card";
 import { listOpenPositions, type PositionRow } from "@/lib/db";
 import { tailLog, type LogRecord } from "@/lib/log";
+import { aggregateByStrategy, computeClv } from "@/lib/clv";
 import { fmtNum, fmtPct, fmtTime, fmtUsd, shortId } from "@/lib/format";
 import { readPolicy } from "@/lib/policy";
 
@@ -105,6 +106,14 @@ export default async function PortfolioSentinel() {
   const category = aggregateExposure(positions, bankroll, 5, () => "all");
 
   const stuck = stuckOrders(records);
+  const clvAll = await computeClv();
+  const clvWithValue = clvAll.filter((c) => c.clv !== null);
+  const clvByStrategy = aggregateByStrategy(clvAll);
+  const clvOverallMean =
+    clvWithValue.length === 0
+      ? null
+      : clvWithValue.reduce((a, b) => a + (b.clv ?? 0), 0) /
+        clvWithValue.length;
 
   const incidents = records
     .filter(
@@ -165,6 +174,64 @@ export default async function PortfolioSentinel() {
           />
         </Card>
       </div>
+
+      <Card title="Closing-line value (PRD §0)">
+        {clvWithValue.length === 0 ? (
+          <p className="text-sm text-muted">
+            No resolved trades with both execution and closing-line data.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-baseline gap-4">
+              <span className="text-xs uppercase tracking-wider text-muted">
+                overall mean CLV
+              </span>
+              <span
+                className={`text-xl font-semibold ${
+                  (clvOverallMean ?? 0) > 0
+                    ? "text-accent"
+                    : (clvOverallMean ?? 0) < 0
+                      ? "text-bad"
+                      : "text-ink"
+                }`}
+              >
+                {clvOverallMean === null
+                  ? "—"
+                  : `${clvOverallMean > 0 ? "+" : ""}${(clvOverallMean * 100).toFixed(2)}¢`}
+              </span>
+              <span className="text-xs text-muted">
+                across {clvWithValue.length} resolved trades
+              </span>
+            </div>
+            <ul className="space-y-2 text-xs">
+              {clvByStrategy.map((s) => {
+                const magnitude = Math.min(1, Math.abs(s.mean) / 0.05);
+                const colour =
+                  s.mean > 0 ? "bg-accent" : s.mean < 0 ? "bg-bad" : "bg-border";
+                return (
+                  <li key={s.strategy}>
+                    <div className="flex justify-between">
+                      <span>{s.strategy}</span>
+                      <span className="text-muted">
+                        n={s.n} · win rate{" "}
+                        {fmtPct(s.positive / s.n, 0)} · mean{" "}
+                        {s.mean > 0 ? "+" : ""}
+                        {(s.mean * 100).toFixed(2)}¢
+                      </span>
+                    </div>
+                    <div className="h-1 rounded bg-border">
+                      <div
+                        className={`h-1 rounded ${colour}`}
+                        style={{ width: `${Math.max(2, magnitude * 100)}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card title="Per-market exposure (cap 1%)">

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Card } from "@/components/Card";
 import { getDb, getMarket, getSignal } from "@/lib/db";
 import { tailLog, type LogRecord } from "@/lib/log";
+import { computeClvForSignal } from "@/lib/clv";
 import { fmtNum, fmtPct, fmtTime, shortId } from "@/lib/format";
 
 type ResolutionRow = { market_id: string; outcome: string; resolved_at: string };
@@ -76,6 +77,7 @@ export default async function TradeCourt({
 
   const resolution = getResolution(signal.market_id);
   const brier = getBrierForSignal(signal.market_id, signal.token_id);
+  const clv = await computeClvForSignal(signalId);
 
   const reasonCodes: string[] = (() => {
     try {
@@ -273,6 +275,37 @@ export default async function TradeCourt({
           </ul>
         ) : (
           <p className="text-xs text-muted">Market not yet resolved.</p>
+        )}
+      </Card>
+
+      <Card title="Closing-line value">
+        {clv === null || clv.clv === null ? (
+          <p className="text-xs text-muted">
+            CLV requires both an execution price and a closing line — one or
+            both are missing for this signal.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            <p
+              className={`text-2xl ${
+                clv.clv > 0
+                  ? "text-accent"
+                  : clv.clv < 0
+                    ? "text-bad"
+                    : "text-ink"
+              }`}
+            >
+              {clv.clv > 0 ? "+" : ""}
+              {(clv.clv * 100).toFixed(2)}¢
+            </p>
+            <ul className="text-xs text-muted">
+              <li>
+                exec {fmtPct(clv.executionPrice, 2)} → close{" "}
+                {fmtPct(clv.closingLine, 2)} · {clv.side}
+              </li>
+              <li>resolved {fmtTime(clv.resolvedAt)} → {clv.outcome}</li>
+            </ul>
+          </div>
         )}
       </Card>
 
