@@ -106,10 +106,35 @@ Mirrors `client.createOrDeriveApiKey()` from `@polymarket/clob-client-v2`.
 3. Skip low-liquidity, wide-spread, ambiguous, insider-risk, manipulation-risk, or poor-resolution markets.
 4. Every candidate trade must be valid JSON. Malformed output is rejected.
 
+## Operations tools
+
+```
+polyflow summarize-log     Actor / action / kill-switch / order counts from the log
+polyflow replay-trade      Pull every record relevant to one signal_id (audit)
+```
+
+The `replay` module also supports programmatic trade reconstruction for
+calibration jobs and regression-testing policy changes.
+
+## Deployment
+
+```
+docker compose up -d
+```
+
+Services:
+- `postgres` — applies `db/schema.sql` on first boot
+- `polyflow` — runs the runtime container; reads credentials from `.env.local` (never baked in)
+- exposes `:8642/healthz` and `:8642/readyz`
+
+The runtime persists to `./logs/` (mounted volume) so the immutable JSONL log
+survives container restarts. The `polyflow` container runs as UID 10001 and
+re-uses the host's `configs/policy.yaml` read-only.
+
 ## What's still out of scope
 
-- WebSocket adapters (CLOB market channel + user channel) — REST polling only for v1
+- WebSocket adapters (CLOB market channel + user channel) — scheduled remote agent in flight; REST polling only locally
 - Spread-capture / market-making strategy — disabled until live maturity
-- Negative-risk basket solver — research/paper only per PRD §9.5
-- Next.js dashboard and Trade Court UI (PRD §19) — operate via CLI for now
-- Postgres deployment scripts — schema lives in `db/schema.sql`; SQLite store is the dev/paper backend
+- Next.js dashboard and Trade Court UI (PRD §19) — scheduled remote agent in flight
+- Postgres adapter mirroring `SQLiteStore` — `db/schema.sql` is loaded by the docker-compose Postgres service; an async asyncpg-backed `PostgresStore` is a small follow-up
+- Resolution monitor wiring — module + tests exist; needs an entry in the runtime's subagent scheduler once the live Gamma adapter is wired in

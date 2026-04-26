@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: polyflow
+      POSTGRES_PASSWORD: polyflow
+      POSTGRES_DB: polyflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polyflow -d polyflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  polyflow:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POLY_DB_URL: postgresql://polyflow:polyflow@postgres:5432/polyflow
+      # Runtime credentials are read from the .env.local file mounted below — never bake into image.
+    env_file:
+      - .env.local
+    volumes:
+      - ./logs:/app/logs
+      - ./configs:/app/configs:ro
+    ports:
+      - "8642:8642"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

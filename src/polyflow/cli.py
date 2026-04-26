@@ -12,6 +12,7 @@ import click
 from .calibration import report as calibration_report
 from .config import Policy
 from .promotion import PromotionInputs, evaluate as evaluate_promotion
+from .replay import reconstruct_trade, summarize as summarize_log
 from .runtime import build_default_runtime, run_forever
 from .secrets import credentials_summary, load_credentials
 from .subagents.heartbeat import Heartbeat
@@ -233,6 +234,40 @@ def positions(limit: int) -> None:
 
     rows = asyncio.run(_run())
     click.echo(json.dumps(rows[:limit], indent=2, default=str))
+
+
+@main.command("summarize-log")
+@click.option("--log", "log_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
+def summarize_log_cmd(log_path: Path) -> None:
+    """Print actor / action / kill-switch / order counts from the immutable log."""
+    s = summarize_log(log_path)
+    click.echo(
+        json.dumps(
+            {
+                "total_records": s.total_records,
+                "kill_switch_events": s.kill_switch_events,
+                "placed_orders": s.placed_orders,
+                "rejected_orders": s.rejected_orders,
+                "by_actor": s.by_actor,
+                "by_action": s.by_action,
+            },
+            indent=2,
+        )
+    )
+
+
+@main.command("replay-trade")
+@click.option("--log", "log_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
+@click.option("--signal-id", required=True)
+def replay_trade_cmd(log_path: Path, signal_id: str) -> None:
+    """Reconstruct every log record relevant to a single signal_id."""
+    records = reconstruct_trade(log_path, signal_id=signal_id)
+    out = [
+        {"ts": r.ts, "actor": r.actor, "action": r.action,
+         "market_id": r.market_id, "payload": r.payload}
+        for r in records
+    ]
+    click.echo(json.dumps(out, indent=2, default=str))
 
 
 if __name__ == "__main__":

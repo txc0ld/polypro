@@ -86,6 +86,56 @@ CREATE TABLE IF NOT EXISTS calibration_observations (
   bucket REAL NOT NULL,         -- e.g. 0.10, 0.20, …, 1.00
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS probability_estimates (
+  id TEXT PRIMARY KEY,
+  market_id TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  market_price REAL NOT NULL,
+  model_probability REAL NOT NULL,
+  uncertainty REAL NOT NULL,
+  edge_after_costs REAL NOT NULL,
+  source_confidence REAL NOT NULL,
+  resolution_risk REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS probability_estimates_market_idx
+  ON probability_estimates(market_id, created_at);
+
+CREATE TABLE IF NOT EXISTS open_orders_snapshot (
+  exchange_order_id TEXT PRIMARY KEY,
+  client_order_id TEXT,
+  market_id TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  side TEXT NOT NULL,
+  price REAL NOT NULL,
+  size REAL NOT NULL,
+  status TEXT NOT NULL,
+  observed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS closing_line_values (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  market_id TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  signal_id TEXT,
+  entry_price REAL NOT NULL,
+  closing_price REAL NOT NULL,
+  side TEXT NOT NULL,           -- 'BUY_YES' or 'BUY_NO'
+  clv REAL NOT NULL,            -- in basis points, signed
+  recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS source_reliability (
+  source_name TEXT PRIMARY KEY,
+  prior REAL NOT NULL DEFAULT 0.70,
+  hits INTEGER NOT NULL DEFAULT 0,
+  misses INTEGER NOT NULL DEFAULT 0,
+  brier_sum REAL NOT NULL DEFAULT 0.0,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 """
 
 
@@ -263,6 +313,167 @@ class SQLiteStore:
                 """
             ).fetchall()
         return {row["bucket"]: dict(row) for row in rows}
+
+    # ---------- probability estimates ----------
+    def insert_probability_estimate(
+        self,
+        *,
+        estimate_id: str,
+        market_id: str,
+        token_id: str,
+        outcome: str,
+        market_price: float,
+        model_probability: float,
+        uncertainty: float,
+        edge_after_costs: float,
+        source_confidence: float,
+        resolution_risk: float,
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO probability_estimates (
+                    id, market_id, token_id, outcome, market_price, model_probability,
+                    uncertainty, edge_after_costs, source_confidence, resolution_risk
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    estimate_id, market_id, token_id, outcome, market_price,
+                    model_probability, uncertainty, edge_after_costs,
+                    source_confidence, resolution_risk,
+                ),
+            )
+
+    def get_probability_estimates(self, market_id: str) -> list[dict]:
+        with self._cursor() as cur:
+            rows = cur.execute(
+                "SELECT * FROM probability_estimates WHERE market_id=? ORDER BY created_at",
+                (market_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---------- open orders snapshot (for the order-sync subagent) ----------
+    def upsert_open_order(
+        self,
+        *,
+        exchange_order_id: str,
+        client_order_id: str | None,
+        market_id: str,
+        token_id: str,
+        side: str,
+        price: float,
+        size: float,
+        status: str,
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO open_orders_snapshot (
+                    exchange_order_id, client_order_id, market_id, token_id,
+                    side, price, size, status, observed_at
+                ) VALUES (?,?,?,?,?,?,?,?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                ON CONFLICT(exchange_order_id) DO UPDATE SET
+                    client_order_id=excluded.client_order_id,
+                    market_id=excluded.market_id,
+                    token_id=excluded.token_id,
+                    side=excluded.side,
+                    price=excluded.price,
+                    size=excluded.size,
+                    status=excluded.status,
+                    observed_at=excluded.observed_at
+                """,
+                (
+                    exchange_order_id, client_order_id, market_id, token_id,
+                    side, price, size, status,
+                ),
+            )
+
+    def get_open_orders(self) -> list[dict]:
+        with self._cursor() as cur:
+            rows = cur.execute(
+                "SELECT * FROM open_orders_snapshot WHERE status='OPEN' ORDER BY observed_at"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_open_order(self, exchange_order_id: str) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                "DELETE FROM open_orders_snapshot WHERE exchange_order_id=?",
+                (exchange_order_id,),
+            )
+
+    # ---------- closing line values ----------
+    def insert_clv(
+        self,
+        *,
+        market_id: str,
+        token_id: str,
+        signal_id: str | None,
+        entry_price: float,
+        closing_price: float,
+        side: str,
+    ) -> None:
+        # CLV in basis points, sign convention: positive when entry was favorable.
+        if side == "BUY_YES":
+            clv_bps = (closing_price - entry_price) * 10_000
+        elif side == "BUY_NO":
+            clv_bps = (entry_price - closing_price) * 10_000
+        else:
+            raise ValueError(f"unknown side: {side!r}")
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO closing_line_values (
+                    market_id, token_id, signal_id, entry_price, closing_price, side, clv
+                ) VALUES (?,?,?,?,?,?,?)
+                """,
+                (market_id, token_id, signal_id, entry_price, closing_price, side, clv_bps),
+            )
+
+    def average_clv_bps(self) -> float | None:
+        with self._cursor() as cur:
+            row = cur.execute("SELECT AVG(clv) AS a FROM closing_line_values").fetchone()
+        return row["a"] if row and row["a"] is not None else None
+
+    # ---------- source reliability ----------
+    def update_source_reliability(
+        self, *, source_name: str, hit: bool, brier_increment: float | None = None
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO source_reliability (source_name, prior, hits, misses, brier_sum)
+                VALUES (?, 0.70, ?, ?, ?)
+                ON CONFLICT(source_name) DO UPDATE SET
+                    hits = source_reliability.hits + ?,
+                    misses = source_reliability.misses + ?,
+                    brier_sum = source_reliability.brier_sum + ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                """,
+                (
+                    source_name,
+                    1 if hit else 0,
+                    0 if hit else 1,
+                    brier_increment or 0.0,
+                    1 if hit else 0,
+                    0 if hit else 1,
+                    brier_increment or 0.0,
+                ),
+            )
+
+    def source_reliability(self, source_name: str) -> dict | None:
+        with self._cursor() as cur:
+            row = cur.execute(
+                "SELECT * FROM source_reliability WHERE source_name=?", (source_name,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def all_source_reliabilities(self) -> list[dict]:
+        with self._cursor() as cur:
+            rows = cur.execute(
+                "SELECT * FROM source_reliability ORDER BY hits + misses DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def close(self) -> None:
         with self._lock:
