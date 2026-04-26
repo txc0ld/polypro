@@ -188,3 +188,61 @@ class RiskDecision(BaseModel):
     fractional_kelly: float = 0.0
     caps_applied: list[str] = Field(default_factory=list)
     reason_codes: list[str] = Field(default_factory=list)
+
+
+class WebSocketEventType(str, Enum):
+    """User-channel event kinds emitted by the Polymarket CLOB WebSocket."""
+
+    FILL = "FILL"
+    ORDER_UPDATE = "ORDER_UPDATE"
+    CANCEL = "CANCEL"
+
+
+class FillEvent(BaseModel):
+    """A trade fill on one of our orders (PRD §7.1 — user channel)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: WebSocketEventType = WebSocketEventType.FILL
+    market_id: str
+    token_id: str
+    outcome: Outcome
+    side: Side
+    price: float = Field(ge=0.0, le=1.0)
+    size: float = Field(gt=0.0)
+    exchange_order_id: str
+    client_order_id: str | None = None
+    fill_id: str | None = None
+    timestamp: datetime
+
+
+class OrderUpdateEvent(BaseModel):
+    """Status change on one of our resting orders."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: WebSocketEventType = WebSocketEventType.ORDER_UPDATE
+    market_id: str
+    token_id: str
+    exchange_order_id: str
+    client_order_id: str | None = None
+    status: str  # e.g. LIVE / MATCHED / PARTIAL / EXPIRED
+    remaining_size: float = 0.0
+    timestamp: datetime
+
+
+class CancelEvent(BaseModel):
+    """A confirmed cancellation of one of our orders."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: WebSocketEventType = WebSocketEventType.CANCEL
+    market_id: str
+    token_id: str
+    exchange_order_id: str
+    client_order_id: str | None = None
+    reason: str | None = None
+    timestamp: datetime
+
+
+WebSocketEvent = FillEvent | OrderUpdateEvent | CancelEvent

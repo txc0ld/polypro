@@ -13,6 +13,7 @@ import structlog
 
 from .adapters.clob import CLOBAdapter, PaperCLOBAdapter
 from .adapters.gamma import GammaAdapter, StubGammaAdapter
+from .adapters.polymarket_websocket import PolymarketUserWebSocket
 from .config import Policy
 from .incident import IncidentManager
 from .logger import ImmutableLogger
@@ -24,14 +25,20 @@ from .risk_governor import KillSwitch, evaluate
 from .signals import decide_action, score_signal
 from .subagents import SubagentScheduler, SubagentTask
 from .subagents.heartbeat import Heartbeat
+from .subagents.portfolio_sentinel import PortfolioSentinel
 from .types import (
+    CancelEvent,
+    FillEvent,
     Mode,
     OrderType,
+    OrderUpdateEvent,
+    Position,
     ProbabilityEstimate,
     RiskState,
     Side,
     Signal,
     Strategy,
+    WebSocketEvent,
 )
 from .watchlist import Watchlist
 
@@ -51,6 +58,8 @@ class Runtime:
     store: SQLiteStore | None = None
     heartbeat: Heartbeat | None = None
     scheduler: SubagentScheduler = field(default_factory=SubagentScheduler)
+    user_ws: PolymarketUserWebSocket | None = None
+    sentinel: PortfolioSentinel | None = None
 
     async def tick_scan(self) -> list[str]:
         """One pass of the 5-minute scanner cadence. Returns approved market IDs."""
@@ -217,6 +226,92 @@ class Runtime:
 
         return {"placed": True, "exchange_order_id": record.get("exchange_order_id")}
 
+    async def handle_user_event(self, event: WebSocketEvent) -> None:
+        """Consume one user-channel event from the CLOB WebSocket.
+
+        - On fills: update the SQLite ``positions`` row and re-run the
+          post-order Kelly guard. A guard breach trips the kill switch.
+        - On every event: bump ``PortfolioSentinel.last_user_channel_event``
+          so the staleness check stays green.
+        - Always log to the immutable log so the audit trail is complete.
+        """
+        if self.sentinel is not None:
+            self.sentinel.last_user_channel_event = event.timestamp
+
+        self.logger.log(
+            actor="user_ws",
+            action=event.type.value.lower(),
+            market_id=event.market_id,
+            input_obj=None,
+            output_obj=event.model_dump(mode="json"),
+            payload=event.model_dump(mode="json"),
+        )
+
+        if isinstance(event, FillEvent) and self.store is not None:
+            existing = {
+                (row["market_id"], row["token_id"]): row
+                for row in self.store.get_open_positions()
+            }
+            key = (event.market_id, event.token_id)
+            prior = existing.get(key)
+            if event.side is Side.BUY:
+                if prior is None:
+                    new_size = event.size
+                    new_avg = event.price
+                else:
+                    prior_size = float(prior["size"])
+                    prior_avg = float(prior["avg_price"])
+                    new_size = prior_size + event.size
+                    new_avg = (
+                        (prior_size * prior_avg + event.size * event.price) / new_size
+                        if new_size > 0
+                        else event.price
+                    )
+            else:  # SELL
+                prior_size = float(prior["size"]) if prior else 0.0
+                prior_avg = float(prior["avg_price"]) if prior else event.price
+                new_size = max(0.0, prior_size - event.size)
+                new_avg = prior_avg
+
+            self.store.upsert_position(
+                Position(
+                    market_id=event.market_id,
+                    token_id=event.token_id,
+                    outcome=event.outcome,
+                    size=new_size,
+                    avg_price=new_avg,
+                )
+            )
+
+        if isinstance(event, FillEvent):
+            positions = await self.clob.get_positions()
+            try:
+                guard = evaluate_exposure(
+                    policy=self.policy,
+                    state=self.state,
+                    positions=positions,
+                    open_order_ids_by_market={},
+                )
+                self.logger.log(
+                    actor="post_order_kelly_guard",
+                    action="evaluate_on_fill",
+                    market_id=event.market_id,
+                    output_obj={"ok": guard.ok, "breaches": list(guard.breaches)},
+                    payload={"ok": guard.ok, "breaches": list(guard.breaches)},
+                )
+            except KillSwitch as ks:
+                self.incidents.trip_killed(
+                    code="POST_ORDER_KELLY_BREACH",
+                    detail=str(ks),
+                    actor="user_ws",
+                )
+                self.logger.log(
+                    actor="post_order_kelly_guard",
+                    action="kill_switch",
+                    market_id=event.market_id,
+                    payload={"reason": str(ks)},
+                )
+
 
 def build_default_runtime(policy: Policy, log_path: str, *, db_path: str | None = None) -> Runtime:
     """Build a runtime with stub adapters — safe for OBSERVE / PAPER modes."""
@@ -242,12 +337,24 @@ async def run_forever(rt: Runtime, *, scan_seconds: int = 300) -> None:
             fn=lambda: _safe_scan(rt),
         )
     )
+    if rt.user_ws is not None:
+        # Single long-running task; the WebSocket adapter does its own reconnect
+        # internally, so the scheduler period is effectively a re-spawn budget.
+        rt.scheduler.register(
+            SubagentTask(
+                name="user_ws",
+                period_seconds=3600.0,
+                fn=lambda: _safe_user_ws(rt),
+            )
+        )
     await rt.scheduler.start()
     try:
         # Park the main task until something kills the runtime.
         while rt.incidents.state.value not in ("killed",):
             await asyncio.sleep(1.0)
     finally:
+        if rt.user_ws is not None:
+            await rt.user_ws.stop()
         await rt.scheduler.stop()
 
 
@@ -260,3 +367,10 @@ async def _safe_scan(rt: Runtime) -> None:
     except Exception as exc:  # noqa: BLE001
         rt.incidents.trip_degraded(code="SCAN_FAILED", detail=str(exc), actor="market_scanner")
         raise
+
+
+async def _safe_user_ws(rt: Runtime) -> None:
+    """Run the WebSocket reconnect loop. The adapter only returns on stop."""
+    if rt.user_ws is None:
+        return
+    await rt.user_ws.run()

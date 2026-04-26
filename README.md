@@ -13,7 +13,7 @@ src/polyflow/subagents/        async cadence scheduler + heartbeat + sentinel
 skills/  hooks/  subagents/    operational contracts (markdown)
 configs/policy.yaml            live policy
 db/schema.sql                  PostgreSQL schema
-tests/                         165 unit + e2e tests (no live network calls)
+tests/                         176 unit + e2e tests (no live network calls)
 .env.local                     local secrets (gitignored)
 ```
 
@@ -106,9 +106,42 @@ Mirrors `client.createOrDeriveApiKey()` from `@polymarket/clob-client-v2`.
 3. Skip low-liquidity, wide-spread, ambiguous, insider-risk, manipulation-risk, or poor-resolution markets.
 4. Every candidate trade must be valid JSON. Malformed output is rejected.
 
+## WebSocket user channel
+
+`polyflow.adapters.polymarket_websocket.PolymarketUserWebSocket` connects to
+`wss://ws-subscriptions-clob.polymarket.com/ws/user`, sends an L2-authenticated
+handshake (`{auth: {apiKey, secret, passphrase}, type: "user", markets: [...]}`),
+and emits structured `FillEvent` / `OrderUpdateEvent` / `CancelEvent` payloads
+through an async callback.
+
+```python
+from polyflow.adapters.polymarket_websocket import PolymarketUserWebSocket
+
+rt.user_ws = PolymarketUserWebSocket(
+    api_key=creds.api_key,
+    secret=creds.api_secret,
+    passphrase=creds.api_passphrase,
+    markets=[m.id for m in rt.watchlist.active()],
+    on_event=rt.handle_user_event,
+)
+# `run_forever` registers the WebSocket as a long-running task on the
+# SubagentScheduler. It auto-reconnects with exponential backoff + jitter.
+```
+
+`Runtime.handle_user_event`:
+
+- updates the SQLite `positions` table on every fill (recomputes weighted-average price);
+- re-runs the post-order Kelly guard — a breach trips `IncidentManager.trip_killed`;
+- bumps `PortfolioSentinel.last_user_channel_event` so the staleness check stays green;
+- writes one immutable-log entry per event.
+
+If the channel goes silent for longer than `PortfolioSentinel.max_user_channel_age_seconds`
+(default 90s), the sentinel trips `LOCKDOWN` so no new orders are placed until the stream
+recovers.
+
 ## What's still out of scope
 
-- WebSocket adapters (CLOB market channel + user channel) — REST polling only for v1
+- CLOB market-data WebSocket channel (book / trade ticks) — REST polling only for v1
 - Spread-capture / market-making strategy — disabled until live maturity
 - Negative-risk basket solver — research/paper only per PRD §9.5
 - Next.js dashboard and Trade Court UI (PRD §19) — operate via CLI for now
