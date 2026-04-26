@@ -13,7 +13,7 @@ src/polyflow/subagents/        async cadence scheduler + heartbeat + sentinel
 skills/  hooks/  subagents/    operational contracts (markdown)
 configs/policy.yaml            live policy
 db/schema.sql                  PostgreSQL schema
-tests/                         165 unit + e2e tests (no live network calls)
+tests/                         178 unit + e2e tests (no live network calls)
 .env.local                     local secrets (gitignored)
 ```
 
@@ -106,9 +106,35 @@ Mirrors `client.createOrDeriveApiKey()` from `@polymarket/clob-client-v2`.
 3. Skip low-liquidity, wide-spread, ambiguous, insider-risk, manipulation-risk, or poor-resolution markets.
 4. Every candidate trade must be valid JSON. Malformed output is rejected.
 
+## WebSocket user channel
+
+`polyflow.adapters.polymarket_websocket.PolymarketUserWebSocket` connects to
+`wss://ws-subscriptions-clob.polymarket.com/ws/user`, sends an initial
+`{auth: {apiKey, secret, passphrase}, type: "user", markets: [...]}` frame
+using the same L2 credentials as the REST trade adapter, and emits strict
+`WSFillEvent` / `WSOrderUpdateEvent` / `WSCancelEvent` records onto an
+`asyncio.Queue`.
+
+Wired into the runtime via `Runtime.user_ws` plus
+`Runtime.user_ws_consume_loop()`:
+
+- fills update the SQLite `positions` table and re-run the post-order Kelly
+  guard
+- every event refreshes `PortfolioSentinel.last_user_channel_event` so the
+  staleness check (PRD §16.3) can trip LOCKDOWN if the channel goes silent
+- a post-fill cap breach trips `IncidentManager.trip_killed` via the same
+  `KillSwitch` path the REST place-order flow uses
+- disconnects auto-reconnect with exponential backoff + full jitter
+  (`BackoffPolicy`, capped at 30 s by default)
+
+Tests in `tests/test_polymarket_websocket.py` use a hand-driven
+`FakeWebSocket` (the duck-typed `send`/`recv`/`close` shape the adapter
+needs) — equivalent to the `httpx.MockTransport` pattern used elsewhere — so
+no real network call ever happens.
+
 ## What's still out of scope
 
-- WebSocket adapters (CLOB market channel + user channel) — REST polling only for v1
+- WebSocket market-data channel (order book / trade ticks) — user channel is wired; market channel still REST-polled
 - Spread-capture / market-making strategy — disabled until live maturity
 - Negative-risk basket solver — research/paper only per PRD §9.5
 - Next.js dashboard and Trade Court UI (PRD §19) — operate via CLI for now
