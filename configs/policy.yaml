@@ -1,0 +1,47 @@
+mode: live_tiny
+
+market_filters:
+  min_liquidity_usd: 100000
+  min_volume_24h_usd: 25000
+  max_spread_pct: 5
+  min_depth_within_5c_usd: 10000
+  min_time_to_close_minutes: 60
+
+risk:
+  bankroll_usdc: 1000
+  max_single_market_position_pct: 1
+  max_single_event_exposure_pct: 2.5
+  max_category_exposure_pct: 5
+  max_daily_loss_pct: 0.75
+  max_weekly_loss_pct: 2
+  max_open_markets: 10
+  max_orders_per_minute: 10
+
+kelly:
+  fraction: 0.05
+  min_effective_edge: 0.03
+  max_model_uncertainty: 0.12
+
+orders:
+  allowed_types_live_tiny:
+    - GTC
+    - FAK
+  allow_market_orders: false
+  require_tick_size: true
+  require_fee_rate: true
+  require_min_order_size: true
+
+integrity:
+  ban_private_information: true
+  ban_leaked_information: true
+  ban_outcome_influencer_trading: true
+  ban_spoofing: true
+  ban_wash_trading: true
+  ban_self_dealing: true
+  ban_manipulation: true
+
+subagents:
+  market_divergence_monitor_seconds: 60
+  news_context_monitor_seconds: 60
+  portfolio_sentinel_seconds: 30
+  market_scanner_minutes: 5
