@@ -31,6 +31,20 @@ from ..types import OrderPayload, Position
 _CLOB_BASE = "https://clob.polymarket.com"
 
 
+def _unwrap_data(payload) -> list[dict]:
+    """Polymarket /data/* endpoints return ``{"data": [...], "next_cursor": ...}``.
+    Some return a bare list. Normalize either to a list of dicts.
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        data = payload.get("data") or []
+        return [item for item in data if isinstance(item, dict)]
+    return []
+
+
 @dataclass(frozen=True)
 class DerivedCredentials:
     api_key: str
@@ -171,10 +185,10 @@ class PolymarketCLOBTradeAdapter:
     #   GET  /balance-allowances    balance + allowance info
 
     async def get_open_orders(self) -> list[dict]:
-        return await self._request("GET", "/data/orders") or []
+        return _unwrap_data(await self._request("GET", "/data/orders"))
 
     async def get_trades(self) -> list[dict]:
-        return await self._request("GET", "/data/trades") or []
+        return _unwrap_data(await self._request("GET", "/data/trades"))
 
     async def get_positions(self) -> list[Position]:
         # Positions are not exposed on the CLOB; use polymarket_user.py against
