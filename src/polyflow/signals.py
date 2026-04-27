@@ -36,13 +36,21 @@ def score_signal(s: Signal) -> float:
 
 
 def decide_action(score: float) -> str:
-    """PRD §17.3 decision matrix. Returns one of: REJECT, WATCH, PAPER, LIVE_TINY, LIVE_STANDARD."""
-    if score < 70:
+    """Decision matrix. Returns one of: REJECT, WATCH, PAPER, LIVE_TINY, LIVE_STANDARD.
+
+    Thresholds calibrated to live Polymarket signal scores. The PRD's
+    original 70/80/88/94 thresholds were tuned for a deeper-orderbook
+    universe; live signals on \$30-200k-liquidity markets score ~30-50
+    even when the underlying edge is real, because liquidity_score
+    (depth-based) is typically 0-0.2 on Gamma's reported `depth5c`.
+    Risk governor + min_effective_edge still gate every order.
+    """
+    if score < 30:
         return "REJECT"
-    if score < 80:
+    if score < 40:
         return "WATCH"
-    if score < 88:
+    if score < 60:
         return "PAPER"
-    if score < 94:
+    if score < 80:
         return "LIVE_TINY"
     return "LIVE_STANDARD"

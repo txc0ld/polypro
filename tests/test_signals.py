@@ -60,11 +60,11 @@ class TestDecide:
     @pytest.mark.parametrize(
         "score,action",
         [
-            (50, "REJECT"),
-            (75, "WATCH"),
-            (82, "PAPER"),
-            (90, "LIVE_TINY"),
-            (96, "LIVE_STANDARD"),
+            (20, "REJECT"),
+            (35, "WATCH"),
+            (50, "PAPER"),
+            (70, "LIVE_TINY"),
+            (90, "LIVE_STANDARD"),
         ],
     )
     def test_thresholds(self, score: float, action: str) -> None:
