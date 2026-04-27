@@ -29,10 +29,10 @@ FORBIDDEN_TEXT_TERMS: frozenset[str] = frozenset(
     }
 )
 
-QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 7 * 24 * 60   # broader scan: 7 days
+QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 72 * 60        # FAST: 72h scalp horizon
 QUICKFIRE_MAX_SPREAD_PCT = 6.0                       # ≤6c
-QUICKFIRE_MIN_VOLUME_24H_USD = 25_000                # ≥$25k 24h volume
-QUICKFIRE_MIN_LIQUIDITY_USD = 25_000                 # ≥$25k available liquidity
+QUICKFIRE_MIN_VOLUME_24H_USD = 10_000                # ≥$10k (esports inclusive)
+QUICKFIRE_MIN_LIQUIDITY_USD = 5_000                  # ≥$5k available liquidity
 
 # Day-trade avoid list: long-duration / non-scalpable markets per the user's
 # scalping doctrine. The scanner refuses anything matching these terms even
@@ -229,13 +229,31 @@ def strategy_candidates(m: Market) -> tuple[Strategy, ...]:
     anchor_categories = (
         "sports", "nba", "nfl", "mlb", "nhl", "soccer", "election",
         "politics", "crypto", "finance", "economics",
+        # Esports — recognized so external_odds_divergence routes against
+        # Odds API esports keys (CSGO/Dota2/LoL/Valorant).
+        "counter-strike", "csgo", "cs:go", "cs2",
+        "league of legends", "lol",
+        "dota", "valorant", "esports",
     )
     if any(term in text for term in anchor_categories):
         out.append(Strategy.EXTERNAL_ODDS_DIVERGENCE)
 
+    # Commodity threshold strategy (WTI / gold / silver / copper) — routes
+    # parsed asset to the commodities Yahoo Finance feed.
+    commodity_terms = ("wti", "crude oil", "oil", "gold", "silver", "copper", "xau", "xag")
+    if any(term in text for term in commodity_terms) and any(t in text for t in threshold_terms):
+        out.append(Strategy.BTC_THRESHOLD)
+
+    # Weather threshold (NOAA/ASOS) — handled by news_repricing for now;
+    # the weather adapter's trajectory_probability is the prior.
+    weather_terms = ("temperature", "rain", "snow", "weather", "tokyo", "seoul", "beijing", "shanghai", "nyc", "new york")
+    if any(term in text for term in weather_terms):
+        out.append(Strategy.NEWS_REPRICING)
+
     news_categories = (
         "politics", "election", "economics", "finance", "business", "crypto",
         "weather", "technology", "tech", "ai", "geopolitics", "fed", "rates",
+        "cpi", "pce", "nfp", "fomc", "treasury",
     )
     if any(term in text for term in news_categories):
         out.append(Strategy.NEWS_REPRICING)
@@ -257,13 +275,19 @@ def strategy_candidates(m: Market) -> tuple[Strategy, ...]:
 
 
 def classify(m: Market, f: MarketFilters) -> ScanDecision:
-    """Classify a market: approved, manual_only, or skipped."""
+    """Classify a market: approved, manual_only, or skipped.
+
+    The quality threshold is intentionally low (0.30) under the FAST profile
+    so high-velocity esports / 5-min crypto markets aren't excluded for
+    having lower aggregate book depth. Strategies still enforce their own
+    quality / size / depth gates downstream.
+    """
     reasons = hard_skip_reasons(m, f)
     if reasons:
         return ScanDecision(m.id, approved=False, manual_only=False, reasons=reasons)
 
     quality = m.market_quality or market_quality_score(m)
-    if quality < 0.70:
+    if quality < 0.30:
         return ScanDecision(
             m.id, approved=False, manual_only=True, reasons=("LOW_QUALITY_REVIEW",)
         )
@@ -273,7 +297,7 @@ def classify(m: Market, f: MarketFilters) -> ScanDecision:
             m.id, approved=False, manual_only=True, reasons=("NO_STRATEGY_MATCH",)
         )
 
-    if f.max_time_to_close_minutes is not None and quickfire_score(m) < 0.50:
+    if f.max_time_to_close_minutes is not None and quickfire_score(m) < 0.25:
         return ScanDecision(
             m.id, approved=False, manual_only=True, reasons=("LOW_QUICKFIRE_SCORE",)
         )

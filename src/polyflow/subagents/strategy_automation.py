@@ -21,6 +21,11 @@ from ..strategies.btc_market_parser import parse_btc_threshold, seconds_to_close
 from ..strategies.btc_threshold import BtcThresholdStrategy
 from ..strategies.crypto_momentum import CryptoMomentumInputs, CryptoMomentumStrategy
 from ..strategies.external_odds_divergence import ExternalOddsDivergence
+from ..strategies.intra_market_arbitrage import detect as detect_arbitrage
+from ..strategies.near_expiry_certainty import (
+    CertaintyScalpInputs,
+    evaluate as evaluate_near_expiry,
+)
 from ..strategies.news_repricing import NewsRepricingStrategy
 from ..types import Market, Mode, ProbabilityEstimate, Signal, Strategy
 
@@ -117,6 +122,79 @@ class StrategyAutomation:
 
     async def _evaluate_market(self, market: Market) -> list[CandidateResult]:
         out: list[CandidateResult] = []
+
+        # Intra-market arbitrage detector (log-only for now — true atomic
+        # two-leg execution requires a separate code path; we still surface
+        # opportunities in the immutable trail for manual review).
+        if (
+            market.best_bid is not None
+            and market.best_ask is not None
+            and market.depth_within_5c_usd > 0
+        ):
+            no_ask = 1.0 - market.best_bid
+            opp = detect_arbitrage(
+                market_id=market.id,
+                yes_ask=market.best_ask,
+                no_ask=no_ask,
+                yes_depth_usd=market.depth_within_5c_usd,
+                no_depth_usd=market.depth_within_5c_usd,
+                fee_rate_bps=market.fee_rate_bps or 0,
+                slippage_bps_each_side=5.0,
+                min_lock_pct=self.runtime.policy.kelly.arbitrage_min_lock_pct,
+            )
+            if opp is not None:
+                self.logger.log(
+                    actor="intra_market_arbitrage",
+                    action="opportunity",
+                    market_id=market.id,
+                    payload={
+                        "combined_ask": opp.combined_ask,
+                        "lock_per_unit": opp.lock_per_unit,
+                        "lock_after_costs": opp.lock_after_costs,
+                        "max_size_usd": opp.max_size_usd,
+                    },
+                )
+
+        # Near-expiry certainty scalper — only valid in the final 15min
+        # window when raw external data already implies the outcome.
+        if (
+            market.best_bid is not None
+            and market.best_ask is not None
+            and market.close_time is not None
+        ):
+            ttc = seconds_to_close(market.close_time)
+            mid = (market.best_bid + market.best_ask) / 2.0
+            # Use the market's own price as a noisy certainty proxy when
+            # we have no raw truth-source for this market — only fires on
+            # already-near-resolved markets at 95-99c.
+            if 0 < ttc <= 15 * 60 and 0.95 <= mid <= 0.99:
+                cert = evaluate_near_expiry(
+                    CertaintyScalpInputs(
+                        market_id=market.id,
+                        side="YES" if market.best_ask >= 0.5 else "NO",
+                        p_executable=market.best_ask if market.best_ask >= 0.5 else market.best_bid,
+                        # The market's own price is a weak certainty proxy.
+                        # The strategy's volatility-spike refusal is bypassed
+                        # here; for true certainty signals we'd need a raw
+                        # truth-source feed (ASOS / spot / oracle).
+                        certainty=max(market.best_bid, market.best_ask),
+                        seconds_to_resolution=ttc,
+                        fee_rate_bps=market.fee_rate_bps or 0,
+                        resolution_rules_clear=bool(market.resolution_rules),
+                    )
+                )
+                if cert.fire:
+                    self.logger.log(
+                        actor="near_expiry_certainty",
+                        action="signal",
+                        market_id=market.id,
+                        payload={
+                            "ev_per_dollar": cert.ev_per_dollar,
+                            "p_executable": market.best_ask,
+                            "ttc_seconds": ttc,
+                        },
+                    )
+
         if self.anchor_adapter is not None:
             anchors = await self.anchor_adapter.fetch(market)
             signal = ExternalOddsDivergence(policy=self.runtime.policy).evaluate(

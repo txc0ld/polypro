@@ -138,8 +138,8 @@ class TestClassify:
         assert not out["approved_markets"]
 
     def test_low_quality_routed_to_manual_only(self) -> None:
-        # Pass hard filters but low-quality enough to need human eyes.
-        m = make_market(market_quality=0.50)
+        # Quality threshold is 0.30 under the FAST profile.
+        m = make_market(market_quality=0.20)
         d = classify(m, MarketFilters())
         assert d.manual_only and not d.approved
 

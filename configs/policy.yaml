@@ -1,17 +1,22 @@
 mode: live_tiny
 
 market_filters:
-  # Scan-more profile: looser floors so the bot sees a broader universe.
-  # Quickfire scoring still ranks the cleanest markets first; the price-zone
-  # gate (0.20-0.80) stays — markets at 95%+ certainty cannot be scalped.
-  min_liquidity_usd: 25000
-  min_volume_24h_usd: 25000
-  max_spread_pct: 6
-  min_depth_within_5c_usd: 2500
-  min_time_to_close_minutes: 5
-  max_time_to_close_minutes: 10080   # 7 days
-  min_mid_price: 0.15
-  max_mid_price: 0.85
+  # FAST profile — admit esports + intraday markets the strict scalp filter
+  # missed. The price band stretches to 0.99 so the near-expiry-certainty
+  # strategy can take 95-99c "already resolved" markets the protocol treats
+  # as separate edge. Strategies still refuse markets they can't price.
+  min_liquidity_usd: 5000
+  min_volume_24h_usd: 10000
+  max_spread_pct: 8
+  min_depth_within_5c_usd: 0
+  # 1-min floor admits fast in-game esports and 5-min BTC bars. Strategies
+  # still refuse based on their own minimum-window rules.
+  min_time_to_close_minutes: 1
+  max_time_to_close_minutes: 4320    # 72h scalp horizon
+  # 0.5c floor admits "essentially-resolved-NO" tail markets so the
+  # near-expiry-certainty scalper can trade them on the NO side.
+  min_mid_price: 0.005
+  max_mid_price: 0.995
 
 risk:
   bankroll_usdc: 39

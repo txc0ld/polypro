@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(taskkill //F //IM python.exe)"
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(python -m pytest -q)",
+      "Bash(rm -f logs/polyflow.db logs/immutable.jsonl)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONPATH=src python -m polyflow.cli scan-once --config configs/policy.yaml --log logs/immutable.jsonl --db logs/polyflow.db --live --gamma-limit 500)"
     ]
   }
 }
