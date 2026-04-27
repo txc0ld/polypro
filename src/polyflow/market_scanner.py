@@ -29,10 +29,10 @@ FORBIDDEN_TEXT_TERMS: frozenset[str] = frozenset(
     }
 )
 
-QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 72 * 60        # scalp doctrine: 72h max
-QUICKFIRE_MAX_SPREAD_PCT = 3.0                       # ≤3c
-QUICKFIRE_MIN_VOLUME_24H_USD = 250_000               # ≥$250k 24h volume
-QUICKFIRE_MIN_LIQUIDITY_USD = 100_000                # ≥$100k available liquidity
+QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 7 * 24 * 60   # broader scan: 7 days
+QUICKFIRE_MAX_SPREAD_PCT = 6.0                       # ≤6c
+QUICKFIRE_MIN_VOLUME_24H_USD = 25_000                # ≥$25k 24h volume
+QUICKFIRE_MIN_LIQUIDITY_USD = 25_000                 # ≥$25k available liquidity
 
 # Day-trade avoid list: long-duration / non-scalpable markets per the user's
 # scalping doctrine. The scanner refuses anything matching these terms even
