@@ -11,7 +11,6 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -242,6 +241,30 @@ class SQLiteStore:
                     json.dumps(s.reason_codes), json.dumps(s.evidence_refs),
                 ),
             )
+
+    def get_recent_signals(self, limit: int = 25) -> list[dict]:
+        with self._cursor() as cur:
+            rows = cur.execute(
+                """
+                SELECT * FROM signals
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def signal_counts_by_strategy(self) -> list[dict]:
+        with self._cursor() as cur:
+            rows = cur.execute(
+                """
+                SELECT strategy, status, COUNT(*) AS n, AVG(score) AS avg_score
+                FROM signals
+                GROUP BY strategy, status
+                ORDER BY n DESC, strategy
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ---------- positions ----------
     def upsert_position(self, p: Position) -> None:

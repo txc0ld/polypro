@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from ..probability import clob_taker_fee_usdc
+
 
 @dataclass(frozen=True)
 class BasketLeg:
@@ -26,6 +28,20 @@ class BasketLeg:
     yes_min_size: float     # minimum tradeable USDC
     yes_depth_usd: float    # depth at the ask
     weight: float = 1.0     # fraction of bankroll to allocate, [0,1]
+    fee_rate: float | None = 0.0
+    expected_slippage: float = 0.0
+    is_placeholder: bool = False
+    is_other: bool = False
+    other_definition_stable: bool = True
+
+    @property
+    def executable_cost_per_unit(self) -> float:
+        """Cost for one YES share including taker fee and slippage buffers."""
+        return (
+            self.yes_ask
+            + clob_taker_fee_usdc(shares=1.0, price=self.yes_ask, fee_rate=self.fee_rate)
+            + self.expected_slippage
+        )
 
 
 @dataclass(frozen=True)
@@ -55,7 +71,27 @@ def evaluate_basket(
             feasible=False, reason="EMPTY_BASKET",
         )
 
-    total = sum(Decimal(str(leg.yes_ask)) for leg in legs)
+    for leg in legs:
+        if leg.is_placeholder:
+            return BasketDecision(
+                legs=tuple(legs), total_cost_per_unit=0.0,
+                guaranteed_profit_per_unit=0.0, feasible=False,
+                reason=f"PLACEHOLDER_OUTCOME:{leg.market_id}",
+            )
+        if leg.is_other and not leg.other_definition_stable:
+            return BasketDecision(
+                legs=tuple(legs), total_cost_per_unit=0.0,
+                guaranteed_profit_per_unit=0.0, feasible=False,
+                reason=f"OTHER_DEFINITION_UNSTABLE:{leg.market_id}",
+            )
+        if leg.yes_depth_usd < leg.yes_ask:
+            return BasketDecision(
+                legs=tuple(legs), total_cost_per_unit=0.0,
+                guaranteed_profit_per_unit=0.0, feasible=False,
+                reason=f"INSUFFICIENT_DEPTH_FOR_UNIT:{leg.market_id}",
+            )
+
+    total = sum(Decimal(str(leg.executable_cost_per_unit)) for leg in legs)
     if total <= 0:
         return BasketDecision(
             legs=tuple(legs), total_cost_per_unit=0.0,

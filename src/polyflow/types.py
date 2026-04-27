@@ -38,6 +38,9 @@ class OrderType(str, Enum):
 class Strategy(str, Enum):
     NEWS_REPRICING = "news_repricing"
     EXTERNAL_ODDS_DIVERGENCE = "external_odds_divergence"
+    BTC_THRESHOLD = "btc_threshold"
+    FOUR_LAYER_ALIGNMENT = "four_layer_alignment"
+    PASSIVE_FAIR_VALUE_QUOTING = "passive_fair_value_quoting"
     NEW_MARKET_OPENING = "new_market_opening"
     SPREAD_CAPTURE = "spread_capture"
     NEGATIVE_RISK_BASKET = "negative_risk_basket"

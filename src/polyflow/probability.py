@@ -38,13 +38,58 @@ def half_spread(best_bid: float | None, best_ask: float | None) -> float:
     return (best_ask - best_bid) / 2.0
 
 
-def fee_impact(price: float, fee_rate_bps: float | None) -> float:
-    """Fees on Polymarket are taken on the winning side; we approximate as
-    ``fee_rate * price`` for buying YES at ``price``.
+def normalize_fee_rate(fee_rate: float | None) -> float:
+    """Return a decimal fee rate from either legacy bps or CLOB V2 rates.
+
+    Older POLYFLOW adapters/tests pass ``200`` for 200 bps. CLOB V2 market
+    info exposes category rates as decimals such as ``0.03``. Supporting both
+    keeps historical fixtures valid while using the current public fee model.
     """
-    if fee_rate_bps is None:
+    if fee_rate is None:
         return 0.0
-    return price * (fee_rate_bps / 10_000.0)
+    if fee_rate < 0:
+        raise ValueError("fee_rate cannot be negative")
+    return fee_rate / 10_000.0 if fee_rate > 1.0 else fee_rate
+
+
+def clob_taker_fee_usdc(
+    *, shares: float, price: float, fee_rate: float | None
+) -> float:
+    """Polymarket CLOB V2 taker fee in USDC.
+
+    Public docs define ``fee = C * feeRate * p * (1 - p)``, where ``C`` is
+    shares and ``p`` is trade price. Makers pay zero, so callers should pass
+    ``fee_rate=0`` for maker simulations.
+    """
+    if shares <= 0 or price <= 0:
+        return 0.0
+    rate = normalize_fee_rate(fee_rate)
+    return shares * rate * price * (1.0 - price)
+
+
+def fee_impact(price: float, fee_rate_bps: float | None) -> float:
+    """Per-share taker fee impact at ``price`` under the CLOB V2 fee model."""
+    return clob_taker_fee_usdc(shares=1.0, price=price, fee_rate=fee_rate_bps)
+
+
+def net_buy_shares_after_fee(
+    *, gross_shares: float, price: float, fee_rate: float | None
+) -> float:
+    """Shares credited after a taker buy, where fees are paid in shares."""
+    if gross_shares <= 0 or price <= 0:
+        return 0.0
+    fee_usdc = clob_taker_fee_usdc(
+        shares=gross_shares, price=price, fee_rate=fee_rate
+    )
+    return max(0.0, gross_shares - (fee_usdc / price))
+
+
+def net_sell_proceeds_after_fee(
+    *, gross_proceeds_usdc: float, shares: float, price: float, fee_rate: float | None
+) -> float:
+    """USDC credited after a taker sell, where fees are paid from proceeds."""
+    fee_usdc = clob_taker_fee_usdc(shares=shares, price=price, fee_rate=fee_rate)
+    return max(0.0, gross_proceeds_usdc - fee_usdc)
 
 
 def effective_edge(

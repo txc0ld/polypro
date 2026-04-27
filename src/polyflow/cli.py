@@ -455,5 +455,33 @@ def replay_trade_cmd(log_path: Path, signal_id: str) -> None:
     click.echo(json.dumps(out, indent=2, default=str))
 
 
+@main.command("dashboard")
+@click.option("--db", "db_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/polyflow.db", show_default=True)
+@click.option("--log", "log_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
+@click.option("--heartbeat", "heartbeat_path", type=click.Path(dir_okay=False, path_type=Path), default=None)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8643, show_default=True, type=int)
+def dashboard_cmd(
+    db_path: Path,
+    log_path: Path,
+    heartbeat_path: Path | None,
+    host: str,
+    port: int,
+) -> None:
+    """Serve the real-time operations dashboard."""
+    from .dashboard import DashboardServer
+
+    click.echo(f"POLYFLOW dashboard listening on http://{host}:{port}")
+    asyncio.run(
+        DashboardServer(
+            db_path=db_path,
+            log_path=log_path,
+            heartbeat_path=heartbeat_path,
+            host=host,
+            port=port,
+        ).serve_forever()
+    )
+
+
 if __name__ == "__main__":
     main()

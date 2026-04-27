@@ -114,7 +114,40 @@ polyflow replay-trade        Pull every record relevant to one signal_id (audit)
 polyflow ghost-summary       Aggregate ghost-mode failure modes (Protocol §5)
 polyflow deployment-gates    Walk the five deployment gates (Protocol §7)
 polyflow reconcile           On-chain vs local-state drift check (Protocol §8)
+polyflow dashboard           Real-time local operations console
 ```
+
+## Operations dashboard
+
+Serve the local real-time operations console:
+
+```bash
+polyflow dashboard --db logs/polyflow.db --log logs/immutable.jsonl
+```
+
+Then open `http://127.0.0.1:8643`.
+
+The dashboard streams heartbeat, open positions, open orders, recent signals,
+watched markets, source reliability, calibration/CLV summary, and immutable log
+tail via Server-Sent Events. Operator controls are safe intents only: they copy
+the exact command or policy action to run, but they do not mutate live orders.
+
+## Learning status
+
+POLYFLOW has measurement-driven learning primitives, not autonomous model
+self-modification. Implemented:
+
+- calibration buckets from resolved predictions
+- source reliability updates with hit/miss and Brier increments
+- closing-line value tracking
+- replay tools for regression-testing policy changes against logged decisions
+- promotion gates that require calibration and positive CLV before scale
+
+Not implemented yet:
+
+- automatic parameter retraining or model promotion
+- online learning from live fills without human review
+- autonomous whale-list refresh or news-embedding retraining
 
 ## Elite Trading Bot Protocol coverage
 
@@ -157,6 +190,6 @@ re-uses the host's `configs/policy.yaml` read-only.
 
 - WebSocket adapters (CLOB market channel + user channel) — scheduled remote agent in flight; REST polling only locally
 - Spread-capture / market-making strategy — disabled until live maturity
-- Next.js dashboard and Trade Court UI (PRD §19) — scheduled remote agent in flight
+- Trade Court approval workflow — dashboard observes and surfaces operator intents, but does not approve live orders
 - Postgres adapter mirroring `SQLiteStore` — `db/schema.sql` is loaded by the docker-compose Postgres service; an async asyncpg-backed `PostgresStore` is a small follow-up
 - Resolution monitor wiring — module + tests exist; needs an entry in the runtime's subagent scheduler once the live Gamma adapter is wired in

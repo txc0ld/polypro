@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .probability import clob_taker_fee_usdc, net_buy_shares_after_fee
+
 
 # Polymarket gas drag is small (proxy meta-tx is sponsored for trading), but we
 # keep a non-zero default so simulators stay honest.
@@ -58,10 +60,12 @@ class FillResult:
     slippage_bps: float
     fee_paid_usdc: float
     gas_paid_usdc: float
+    gross_shares: float = 0.0
+    net_shares: float = 0.0
 
     @property
     def shares(self) -> float:
-        return self.filled_usdc / self.avg_price if self.avg_price > 0 else 0.0
+        return self.net_shares
 
 
 def simulate_fill(
@@ -95,6 +99,8 @@ def simulate_fill(
     queue = queue_ahead_usdc
     spent = 0.0
     shares = 0.0
+    fee = 0.0
+    net_shares = 0.0
 
     for lvl in effective_levels:
         if remaining <= 0:
@@ -108,25 +114,34 @@ def simulate_fill(
             continue
 
         take = min(remaining, depth)
+        level_shares = take / lvl.price
         spent += take
-        shares += take / lvl.price
+        shares += level_shares
+        fee += clob_taker_fee_usdc(
+            shares=level_shares, price=lvl.price, fee_rate=fee_rate_bps
+        )
+        net_shares += net_buy_shares_after_fee(
+            gross_shares=level_shares, price=lvl.price, fee_rate=fee_rate_bps
+        )
         remaining -= take
 
     if shares <= 0:
         return FillResult(
             filled_usdc=0.0, avg_price=0.0, slippage_bps=0.0,
             fee_paid_usdc=0.0, gas_paid_usdc=gas_per_trade_usd,
+            gross_shares=0.0, net_shares=0.0,
         )
 
     avg_price = spent / shares
     slippage_bps = abs((avg_price - order.limit_price) / order.limit_price) * 10_000
-    fee = spent * (fee_rate_bps / 10_000.0)
     return FillResult(
         filled_usdc=spent,
         avg_price=avg_price,
         slippage_bps=slippage_bps,
         fee_paid_usdc=fee,
         gas_paid_usdc=gas_per_trade_usd,
+        gross_shares=shares,
+        net_shares=net_shares,
     )
 
 

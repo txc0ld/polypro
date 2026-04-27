@@ -70,7 +70,9 @@ class TestSimulateFill:
         fill = simulate_fill(
             _order("BUY_YES", 0.60, 50.0), book, fee_rate_bps=200, gas_per_trade_usd=0.05
         )
-        assert fill.fee_paid_usdc == pytest.approx(50.0 * 0.02)
+        assert fill.gross_shares == pytest.approx(100.0)
+        assert fill.fee_paid_usdc == pytest.approx(100.0 * 0.02 * 0.50 * 0.50)
+        assert fill.shares == pytest.approx(99.0)
         assert fill.gas_paid_usdc == 0.05
 
 

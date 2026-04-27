@@ -7,9 +7,13 @@ import pytest
 from polyflow.probability import (
     brier_score,
     build_estimate,
+    clob_taker_fee_usdc,
     effective_edge,
     fee_impact,
     half_spread,
+    net_buy_shares_after_fee,
+    net_sell_proceeds_after_fee,
+    normalize_fee_rate,
     remove_vig,
 )
 from polyflow.types import Outcome
@@ -72,11 +76,33 @@ class TestSpreadAndFee:
         assert half_spread(None, 0.63) == 0.0
 
     def test_fee_impact(self) -> None:
-        # 200 bps on a $0.62 contract = $0.0124
-        assert fee_impact(0.62, 200) == pytest.approx(0.0124)
+        # 200 bps legacy input -> 0.02 * p * (1-p)
+        assert fee_impact(0.62, 200) == pytest.approx(0.02 * 0.62 * 0.38)
+
+    def test_fee_impact_accepts_clob_v2_decimal_rate(self) -> None:
+        assert fee_impact(0.62, 0.03) == pytest.approx(0.03 * 0.62 * 0.38)
 
     def test_fee_impact_unknown(self) -> None:
         assert fee_impact(0.62, None) == 0.0
+
+    def test_normalize_fee_rate_supports_legacy_bps_and_v2_decimal(self) -> None:
+        assert normalize_fee_rate(200) == pytest.approx(0.02)
+        assert normalize_fee_rate(0.03) == pytest.approx(0.03)
+
+    def test_clob_taker_fee_usdc(self) -> None:
+        assert clob_taker_fee_usdc(shares=6, price=0.64, fee_rate=0.072) == pytest.approx(
+            6 * 0.072 * 0.64 * 0.36
+        )
+
+    def test_buy_fee_reduces_net_shares(self) -> None:
+        net = net_buy_shares_after_fee(gross_shares=6, price=0.64, fee_rate=0.072)
+        assert net == pytest.approx(5.84448)
+
+    def test_sell_fee_reduces_net_proceeds(self) -> None:
+        net = net_sell_proceeds_after_fee(
+            gross_proceeds_usdc=3.84, shares=6, price=0.64, fee_rate=0.072
+        )
+        assert net == pytest.approx(3.84 - (6 * 0.072 * 0.64 * 0.36))
 
 
 class TestBuildEstimate:
