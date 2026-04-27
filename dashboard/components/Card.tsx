@@ -6,17 +6,26 @@ export function Card({
   children,
   className = "",
   padded = true,
+  glow = false,
 }: {
   title?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
   padded?: boolean;
+  glow?: boolean;
 }) {
   return (
     <section
-      className={`rounded-md border border-border bg-panel ${className}`}
+      className={`relative overflow-hidden rounded-lg border border-border/70 bg-panel/70 backdrop-blur-sm ${
+        glow ? "card-glow-strong" : "card-glow"
+      } ${className}`}
     >
+      {/* top accent gradient line */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent"
+      />
       {title || action ? (
         <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
           {title ? (
@@ -43,22 +52,24 @@ export function Stat({
   label: string;
   value: ReactNode;
   hint?: ReactNode;
-  tone?: "default" | "good" | "warn" | "bad";
+  tone?: "default" | "good" | "warn" | "bad" | "accent";
 }) {
   const toneClass =
     tone === "good"
-      ? "text-accent"
+      ? "text-good"
       : tone === "warn"
         ? "text-warn"
         : tone === "bad"
           ? "text-bad"
-          : "text-ink";
+          : tone === "accent"
+            ? "gradient-text"
+            : "text-ink";
   return (
     <div className="flex flex-col gap-1">
       <span className="text-caption uppercase tracking-wider text-subtle">
         {label}
       </span>
-      <span className={`tabular text-2xl font-medium ${toneClass}`}>
+      <span className={`tabular text-2xl font-semibold ${toneClass}`}>
         {value}
       </span>
       {hint ? <span className="text-xs text-muted">{hint}</span> : null}

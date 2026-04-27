@@ -38,7 +38,7 @@ export default function TradeCourtIndex() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight">
+          <h1 className="text-display font-semibold tracking-tight gradient-text">
             Trade Court
           </h1>
           <p className="text-sm text-subtle">

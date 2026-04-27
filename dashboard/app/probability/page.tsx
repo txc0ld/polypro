@@ -26,7 +26,7 @@ export default function ProbabilityIndex() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight">
+          <h1 className="text-display font-semibold tracking-tight gradient-text">
             Probability Lab
           </h1>
           <p className="text-sm text-subtle">

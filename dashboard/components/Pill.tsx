@@ -9,12 +9,12 @@ export type PillTone =
   | "muted";
 
 const TONE: Record<PillTone, string> = {
-  neutral: "border-border bg-white/5 text-ink",
-  good: "border-accent/40 bg-accent/10 text-accent",
-  warn: "border-warn/40 bg-warn/10 text-warn",
-  bad: "border-bad/40 bg-bad/10 text-bad",
-  info: "border-sky/40 bg-sky/10 text-sky",
-  muted: "border-border bg-transparent text-subtle",
+  neutral: "border-accent/30 bg-accent/[0.06] text-ink",
+  good: "border-good/50 bg-good/10 text-good shadow-glow-good",
+  warn: "border-warn/50 bg-warn/10 text-warn",
+  bad: "border-bad/50 bg-bad/10 text-bad shadow-glow-bad",
+  info: "border-sky/50 bg-sky/10 text-sky",
+  muted: "border-border/60 bg-transparent text-subtle",
 };
 
 export function Pill({
@@ -38,7 +38,7 @@ export function Pill({
         <span
           className={`h-1.5 w-1.5 rounded-full ${
             tone === "good"
-              ? "bg-accent"
+              ? "bg-good"
               : tone === "warn"
                 ? "bg-warn"
                 : tone === "bad"

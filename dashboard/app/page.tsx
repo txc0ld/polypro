@@ -37,13 +37,15 @@ export default async function LiveDesk() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight">Live Desk</h1>
+          <h1 className="text-display font-semibold tracking-tight gradient-text">
+            Live Desk
+          </h1>
           <p className="text-sm text-subtle">
-            Autonomous runtime · 7 strategies wired · read-only mirror
+            Autonomous runtime · 7 strategies wired · auto-refresh 10s
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-subtle">
-          <Pill tone="muted">PRD §19.1</Pill>
+          <Pill tone="neutral">PRD §19.1</Pill>
         </div>
       </header>
 
