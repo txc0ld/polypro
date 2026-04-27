@@ -14,6 +14,7 @@ from ..adapters.anchors import AnchorAdapter
 from ..adapters.btc_feed import BtcPriceFeed, build_snapshot, fetch_perp_snapshot, summarize
 from ..adapters.news import NewsAdapter
 from ..adapters.polymarket_user import PolymarketUserAdapter
+from ..circuit_breakers import CircuitBreakers
 from ..logger import ImmutableLogger
 from ..persistence import SQLiteStore
 from ..strategies.btc_market_parser import parse_btc_threshold, seconds_to_close
@@ -44,7 +45,8 @@ class StrategyAutomation:
         news_adapter: NewsAdapter | None = None,
         btc_feed: BtcPriceFeed | None = None,
         commodities_feed=None,            # type: CommoditiesFeed | None
-        macro_calendar=None,              # type: MacroCalendar | None
+        macro_calendar=None,               # type: MacroCalendar | None
+        circuit_breakers: CircuitBreakers | None = None,
         max_markets: int = 12,
         allow_order_placement: bool = False,
     ) -> None:
@@ -56,6 +58,7 @@ class StrategyAutomation:
         self.btc_feed = btc_feed
         self.commodities_feed = commodities_feed
         self.macro_calendar = macro_calendar
+        self.circuit_breakers = circuit_breakers or CircuitBreakers()
         self.max_markets = max_markets
         self.allow_order_placement = allow_order_placement
 
@@ -393,6 +396,33 @@ class StrategyAutomation:
         return result
 
     async def _submit_candidate(self, market: Market, candidate: CandidateResult) -> dict:
+        # Circuit breakers — refuse before the order even reaches the runtime.
+        if not self.circuit_breakers.can_trade:
+            self.logger.log(
+                actor="circuit_breakers",
+                action="frozen_consecutive_losses",
+                market_id=market.id,
+                payload={
+                    "consecutive_losses": self.circuit_breakers.consecutive_losses,
+                    "max": self.circuit_breakers.max_consecutive_losses,
+                },
+            )
+            return {"placed": False, "reason": "CONSECUTIVE_LOSS_FREEZE"}
+
+        if self.circuit_breakers.in_final_blackout(
+            close_time=market.close_time, market_id=market.id
+        ):
+            self.logger.log(
+                actor="circuit_breakers",
+                action="final_blackout",
+                market_id=market.id,
+                payload={
+                    "blackout_seconds": self.circuit_breakers.final_blackout_seconds,
+                    "close_time": market.close_time.isoformat() if market.close_time else None,
+                },
+            )
+            return {"placed": False, "reason": "FINAL_BLACKOUT"}
+
         original_mode = self.runtime.policy.mode
         if not self.allow_order_placement:
             self.runtime.policy.mode = Mode.OBSERVE
@@ -418,6 +448,11 @@ class StrategyAutomation:
             },
         )
         return result
+
+    def record_trade_outcome(self, *, pnl_usdc: float) -> None:
+        """Hook for the runtime to feed realized trade outcomes back into the
+        consecutive-loss counter. Called from the post-resolution path."""
+        self.circuit_breakers.record_outcome(pnl_usdc=pnl_usdc)
 
 
 class TradeActivityAnalyzer:

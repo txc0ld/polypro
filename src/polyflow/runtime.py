@@ -327,6 +327,7 @@ async def run_forever(
         from .adapters.commodities import CommoditiesFeed
         from .adapters.macro_calendar import MacroCalendar
         from .adapters.odds_api import OddsAPIClient
+        from .circuit_breakers import CircuitBreakers
 
         # Anchor adapter: prefer The Odds API when key is present; otherwise
         # fall back to the file-based anchor adapter for operator-curated data.
@@ -352,6 +353,10 @@ async def run_forever(
             MacroCalendar.from_yaml(macro_path) if macro_path.exists() else None
         )
 
+        circuit_breakers = CircuitBreakers(
+            max_consecutive_losses=5,
+            final_blackout_seconds=60,
+        )
         strategy_automation = StrategyAutomation(
             runtime=rt,
             store=rt.store,
@@ -361,6 +366,7 @@ async def run_forever(
             btc_feed=btc_feed,
             commodities_feed=commodities_feed,
             macro_calendar=macro_calendar,
+            circuit_breakers=circuit_breakers,
             max_markets=rt.policy.automation.max_markets_per_strategy_cycle,
             allow_order_placement=rt.policy.automation.allow_order_placement,
         )
