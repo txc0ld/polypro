@@ -47,9 +47,20 @@ subagents:
   portfolio_sentinel_seconds: 30
   market_scanner_minutes: 5
   reference_repo_monitor_seconds: 3600
+  strategy_automation_seconds: 30
+  trade_activity_seconds: 60
 
 automation:
   enabled: true
+  allow_order_placement: false
+  max_markets_per_strategy_cycle: 12
+  external_anchors_path: configs/external_anchors.json
+  news_max_items_per_feed: 20
+  news_rss_urls:
+    - https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best
+    - https://www.espn.com/espn/rss/news
+    - https://www.coindesk.com/arc/outboundfeeds/rss/
+    - https://feeds.bbci.co.uk/news/world/rss.xml
   require_pinned_commits: true
   sources:
     - name: poly_data

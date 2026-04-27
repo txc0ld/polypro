@@ -70,6 +70,8 @@ class SubagentCadence(BaseModel):
     portfolio_sentinel_seconds: int = 30
     market_scanner_minutes: int = 5
     reference_repo_monitor_seconds: int = 3600
+    strategy_automation_seconds: int = 30
+    trade_activity_seconds: int = 60
 
 
 class ReferenceRepoConfig(BaseModel):
@@ -89,6 +91,11 @@ class AutomationConfig(BaseModel):
     enabled: bool = True
     require_pinned_commits: bool = True
     sources: list[ReferenceRepoConfig] = Field(default_factory=list)
+    allow_order_placement: bool = False
+    max_markets_per_strategy_cycle: int = 12
+    external_anchors_path: str | None = "configs/external_anchors.json"
+    news_rss_urls: list[str] = Field(default_factory=list)
+    news_max_items_per_feed: int = 20
 
 
 class Policy(BaseModel):

@@ -31,6 +31,7 @@ def main() -> None:
 @click.option("--scan-seconds", type=int, default=300, show_default=True)
 @click.option("--live-scanner/--stub-scanner", default=False, show_default=True)
 @click.option("--gamma-limit", type=int, default=200, show_default=True)
+@click.option("--live-trading/--paper-trading", default=False, show_default=True)
 def run(
     config_path: Path,
     log_path: Path,
@@ -38,18 +39,34 @@ def run(
     scan_seconds: int,
     live_scanner: bool,
     gamma_limit: int,
+    live_trading: bool,
 ) -> None:
     """Run the runtime. Live scanner uses public Polymarket reads only."""
     policy = Policy.from_yaml(config_path)
+    creds = load_credentials()
+    clob = None
+    if live_trading:
+        if not policy.automation.allow_order_placement:
+            click.echo(
+                "Refusing --live-trading because automation.allow_order_placement is false.",
+                err=True,
+            )
+            raise SystemExit(2)
+        from .adapters.polymarket_clob_trade import PolymarketCLOBTradeAdapter
+
+        clob = PolymarketCLOBTradeAdapter(credentials=creds)
     if live_scanner:
         rt = build_live_scanner_runtime(
             policy,
             str(log_path),
             db_path=str(db_path),
             gamma_limit=gamma_limit,
+            clob=clob,
+            wallet_address=creds.funder_address or creds.wallet_address,
         )
     else:
         rt = build_default_runtime(policy, str(log_path), db_path=str(db_path))
+        rt.wallet_address = creds.funder_address or creds.wallet_address
     rt.heartbeat = Heartbeat(log_path.parent / "heartbeat.json")
     asyncio.run(run_forever(rt, scan_seconds=scan_seconds))
 

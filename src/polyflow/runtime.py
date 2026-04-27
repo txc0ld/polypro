@@ -13,6 +13,8 @@ import structlog
 
 from .adapters.clob import CLOBAdapter, PaperCLOBAdapter
 from .adapters.gamma import GammaAdapter, StubGammaAdapter
+from .adapters.anchors import FileAnchorAdapter
+from .adapters.news import RSSNewsAdapter
 from .adapters.polymarket_gamma import PolymarketGammaAdapter
 from .config import Policy
 from .incident import IncidentManager
@@ -28,6 +30,7 @@ from .subagents.heartbeat import Heartbeat
 from .subagents.order_sync import OrderSync
 from .subagents.reference_repo_monitor import ReferenceRepoMonitor
 from .subagents.resolution_monitor import ResolutionMonitor
+from .subagents.strategy_automation import StrategyAutomation, TradeActivityAnalyzer
 from .types import (
     Mode,
     OrderType,
@@ -54,6 +57,7 @@ class Runtime:
     store: SQLiteStore | None = None
     heartbeat: Heartbeat | None = None
     scheduler: SubagentScheduler = field(default_factory=SubagentScheduler)
+    wallet_address: str | None = None
 
     async def tick_scan(self) -> list[str]:
         """One pass of the 5-minute scanner cadence. Returns approved market IDs."""
@@ -268,6 +272,8 @@ def build_live_scanner_runtime(
     *,
     db_path: str | None = None,
     gamma_limit: int = 200,
+    clob: CLOBAdapter | None = None,
+    wallet_address: str | None = None,
 ) -> Runtime:
     """Build a read-only live scanner runtime using public Polymarket feeds."""
     return Runtime(
@@ -276,10 +282,11 @@ def build_live_scanner_runtime(
             enrich_order_books=True,
             max_order_book_enrich=gamma_limit,
         ),
-        clob=PaperCLOBAdapter(),
+        clob=clob or PaperCLOBAdapter(),
         logger=ImmutableLogger(log_path, code_version="dev", config_hash=policy.config_hash),
         state=RiskState(bankroll_usdc=policy.risk.bankroll_usdc),
         store=SQLiteStore(db_path) if db_path else None,
+        wallet_address=wallet_address,
     )
 
 
@@ -313,6 +320,45 @@ async def run_forever(
             fn=lambda: _safe_scan(rt),
         )
     )
+
+    if rt.store is not None and rt.policy.automation.enabled:
+        anchor_adapter = (
+            FileAnchorAdapter(rt.policy.automation.external_anchors_path)
+            if rt.policy.automation.external_anchors_path
+            else None
+        )
+        news_adapter = RSSNewsAdapter(
+            feed_urls=rt.policy.automation.news_rss_urls,
+            max_items_per_feed=rt.policy.automation.news_max_items_per_feed,
+        )
+        strategy_automation = StrategyAutomation(
+            runtime=rt,
+            store=rt.store,
+            logger=rt.logger,
+            anchor_adapter=anchor_adapter,
+            news_adapter=news_adapter,
+            max_markets=rt.policy.automation.max_markets_per_strategy_cycle,
+            allow_order_placement=rt.policy.automation.allow_order_placement,
+        )
+        rt.scheduler.register(
+            SubagentTask(
+                name="strategy_automation",
+                period_seconds=float(rt.policy.subagents.strategy_automation_seconds),
+                fn=strategy_automation.tick,
+            )
+        )
+        trade_activity = TradeActivityAnalyzer(
+            wallet_address=rt.wallet_address,
+            logger=rt.logger,
+            store=rt.store,
+        )
+        rt.scheduler.register(
+            SubagentTask(
+                name="trade_activity_analyzer",
+                period_seconds=float(rt.policy.subagents.trade_activity_seconds),
+                fn=trade_activity.tick,
+            )
+        )
 
     # Resolution monitor closes the calibration loop — only register if we have a store.
     if rt.store is not None:

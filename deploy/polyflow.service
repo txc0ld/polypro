@@ -1,0 +1,20 @@
+[Unit]
+Description=POLYFLOW 24/7 Polymarket automation runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/polyflow
+EnvironmentFile=/opt/polyflow/.env.local
+ExecStart=/opt/polyflow/.venv/bin/polyflow run --config configs/policy.yaml --log logs/immutable.jsonl --db logs/polyflow.db --live-scanner --gamma-limit 120 --scan-seconds 300
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

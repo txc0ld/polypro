@@ -11,6 +11,7 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
@@ -291,6 +292,49 @@ class SQLiteStore:
             item["neg_risk"] = bool(item.get("neg_risk"))
             out.append(item)
         return out
+
+    def get_market(self, market_id: str) -> Market | None:
+        with self._cursor() as cur:
+            market_row = cur.execute(
+                "SELECT * FROM markets WHERE id=?", (market_id,)
+            ).fetchone()
+            token_rows = cur.execute(
+                "SELECT * FROM outcome_tokens WHERE market_id=?", (market_id,)
+            ).fetchall()
+        if market_row is None:
+            return None
+        row = dict(market_row)
+        yes = next((dict(r) for r in token_rows if str(r["outcome"]).upper() == "YES"), None)
+        no = next((dict(r) for r in token_rows if str(r["outcome"]).upper() == "NO"), None)
+        token_meta = yes or no or {}
+        close_time = None
+        if row.get("close_time"):
+            try:
+                close_time = datetime.fromisoformat(str(row["close_time"]))
+            except ValueError:
+                close_time = None
+        return Market(
+            id=row["id"],
+            event_id=row.get("event_id"),
+            question=row["question"],
+            category=row.get("category"),
+            close_time=close_time,
+            resolution_rules=row.get("resolution_rules"),
+            liquidity_usd=float(row.get("liquidity_usd") or 0.0),
+            volume_24h_usd=float(row.get("volume_24h_usd") or 0.0),
+            spread_pct=float(row.get("spread_pct") or 100.0),
+            depth_within_5c_usd=float(row.get("depth_within_5c_usd") or 0.0),
+            best_bid=row.get("best_bid"),
+            best_ask=row.get("best_ask"),
+            yes_token_id=yes.get("token_id") if yes else None,
+            no_token_id=no.get("token_id") if no else None,
+            tick_size=token_meta.get("tick_size"),
+            min_order_size=token_meta.get("min_order_size"),
+            fee_rate_bps=token_meta.get("fee_rate_bps"),
+            neg_risk=bool(row.get("neg_risk")),
+            market_quality=float(row.get("market_quality") or 0.0),
+            resolution_risk=float(row.get("resolution_risk") or 1.0),
+        )
 
     def set_market_status(self, market_id: str, status: str) -> None:
         with self._cursor() as cur:

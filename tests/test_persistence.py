@@ -56,6 +56,16 @@ class TestMarkets:
         assert store.get_markets_by_status("approved") == []
         assert len(store.get_markets_by_status("skipped")) == 1
 
+    def test_get_market_rehydrates_tokens_and_metadata(self) -> None:
+        store = SQLiteStore(":memory:")
+        store.upsert_market(_market(), status="watching")
+        market = store.get_market("m1")
+        assert market is not None
+        assert market.yes_token_id == "t-yes"
+        assert market.no_token_id == "t-no"
+        assert market.tick_size == 0.01
+        assert market.best_bid is None
+
 
 class TestSignals:
     def test_insert_signal(self) -> None:
