@@ -23,6 +23,10 @@ class MarketFilters(BaseModel):
 
 class RiskLimits(BaseModel):
     bankroll_usdc: float = 1000.0
+    # Optional absolute hard cap on per-order USDC. None = no extra cap beyond
+    # the percentage caps and the first-live-day floors. Set this to take the
+    # min(this, first-day floor, percentage caps) on every order.
+    max_order_usdc: float | None = None
     max_single_market_position_pct: float = 1.0
     max_single_event_exposure_pct: float = 2.5
     max_category_exposure_pct: float = 5.0

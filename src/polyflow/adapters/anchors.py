@@ -1,8 +1,15 @@
 """External probability anchor adapters (sportsbooks, Kalshi, polling, crypto spot).
 
-These are deliberately a Protocol + simple file-based fallback. Production
-implementations plug regulated odds APIs / Kalshi / public forecast APIs in.
-The strategy module consumes only the normalized ``OddsAnchor`` records.
+The strategy module consumes only normalized ``OddsAnchor`` records. Two
+production-grade adapters live here:
+
+  - ``FileAnchorAdapter`` — operator-curated JSON, useful for tests and for
+    seeding anchors before a live odds API is configured.
+  - ``_OddsAPIAnchorAdapter`` — wraps ``OddsAPIClient`` to match Polymarket
+    questions against live sportsbook events.
+
+Both implement the same ``AnchorAdapter`` protocol: ``fetch(market)`` returns
+a list of anchors that the divergence strategy can consume directly.
 """
 
 from __future__ import annotations
@@ -13,23 +20,21 @@ from pathlib import Path
 from typing import Protocol
 
 from ..strategies.external_odds_divergence import OddsAnchor
+from ..types import Market
 
 
 class AnchorAdapter(Protocol):
-    async def fetch(self, market_id: str) -> list[OddsAnchor]: ...
+    async def fetch(self, market: Market) -> list[OddsAnchor]: ...
 
 
 class FileAnchorAdapter:
-    """Reads a JSON file mapping ``market_id -> [{source,odds_yes,odds_no,...}]``.
-
-    Useful for tests and for one-off operator-curated anchors before live odds
-    APIs are wired in.
-    """
+    """Reads a JSON file mapping ``market_id -> [{source, yes_decimal_odds, …}]``."""
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
 
-    async def fetch(self, market_id: str) -> list[OddsAnchor]:
+    async def fetch(self, market: Market | str) -> list[OddsAnchor]:
+        market_id = market.id if isinstance(market, Market) else market
         if not self._path.exists():
             return []
         data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -54,3 +59,15 @@ class FileAnchorAdapter:
                 )
             )
         return out
+
+
+class _OddsAPIAnchorAdapter:
+    """Adapter shim over ``OddsAPIClient`` matching against the Polymarket question."""
+
+    def __init__(self, client) -> None:  # OddsAPIClient (avoid circular import)
+        self._client = client
+
+    async def fetch(self, market: Market | str) -> list[OddsAnchor]:
+        if not isinstance(market, Market):
+            return []
+        return await self._client.anchors_for_market(market.question)

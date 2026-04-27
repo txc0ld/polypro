@@ -144,6 +144,11 @@ def evaluate(
             )
             caps.append("FIRST_DAY_MARKET_POSITION_CAP")
 
+    # --- Operator-set absolute cap (always applied, regardless of mode) ----
+    if policy.risk.max_order_usdc is not None and size_usdc > policy.risk.max_order_usdc:
+        size_usdc = policy.risk.max_order_usdc
+        caps.append("MAX_ORDER_USDC")
+
     if size_usdc <= 0:
         return RiskDecision(
             approved=False,

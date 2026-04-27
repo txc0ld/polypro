@@ -322,21 +322,32 @@ async def run_forever(
     )
 
     if rt.store is not None and rt.policy.automation.enabled:
-        anchor_adapter = (
-            FileAnchorAdapter(rt.policy.automation.external_anchors_path)
-            if rt.policy.automation.external_anchors_path
-            else None
-        )
+        from .adapters.btc_feed import BtcPriceFeed
+        from .adapters.odds_api import OddsAPIClient
+
+        # Anchor adapter: prefer The Odds API when key is present; otherwise
+        # fall back to the file-based anchor adapter for operator-curated data.
+        odds_client = OddsAPIClient.from_env()
+        if odds_client.configured:
+            from .adapters.anchors import _OddsAPIAnchorAdapter  # type: ignore[attr-defined]
+            anchor_adapter = _OddsAPIAnchorAdapter(odds_client)
+        elif rt.policy.automation.external_anchors_path:
+            anchor_adapter = FileAnchorAdapter(rt.policy.automation.external_anchors_path)
+        else:
+            anchor_adapter = None
+
         news_adapter = RSSNewsAdapter(
             feed_urls=rt.policy.automation.news_rss_urls,
             max_items_per_feed=rt.policy.automation.news_max_items_per_feed,
         )
+        btc_feed = BtcPriceFeed()
         strategy_automation = StrategyAutomation(
             runtime=rt,
             store=rt.store,
             logger=rt.logger,
             anchor_adapter=anchor_adapter,
             news_adapter=news_adapter,
+            btc_feed=btc_feed,
             max_markets=rt.policy.automation.max_markets_per_strategy_cycle,
             allow_order_placement=rt.policy.automation.allow_order_placement,
         )

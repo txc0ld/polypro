@@ -11,10 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..adapters.anchors import AnchorAdapter
+from ..adapters.btc_feed import BtcPriceFeed, build_snapshot, summarize
 from ..adapters.news import NewsAdapter
 from ..adapters.polymarket_user import PolymarketUserAdapter
 from ..logger import ImmutableLogger
 from ..persistence import SQLiteStore
+from ..strategies.btc_market_parser import parse_btc_threshold, seconds_to_close
+from ..strategies.btc_threshold import BtcThresholdStrategy
 from ..strategies.external_odds_divergence import ExternalOddsDivergence
 from ..strategies.news_repricing import NewsRepricingStrategy
 from ..types import Market, Mode, ProbabilityEstimate, Signal, Strategy
@@ -38,6 +41,7 @@ class StrategyAutomation:
         logger: ImmutableLogger,
         anchor_adapter: AnchorAdapter | None = None,
         news_adapter: NewsAdapter | None = None,
+        btc_feed: BtcPriceFeed | None = None,
         max_markets: int = 12,
         allow_order_placement: bool = False,
     ) -> None:
@@ -46,6 +50,7 @@ class StrategyAutomation:
         self.logger = logger
         self.anchor_adapter = anchor_adapter
         self.news_adapter = news_adapter
+        self.btc_feed = btc_feed
         self.max_markets = max_markets
         self.allow_order_placement = allow_order_placement
 
@@ -105,7 +110,7 @@ class StrategyAutomation:
     async def _evaluate_market(self, market: Market) -> list[CandidateResult]:
         out: list[CandidateResult] = []
         if self.anchor_adapter is not None:
-            anchors = await self.anchor_adapter.fetch(market.id)
+            anchors = await self.anchor_adapter.fetch(market)
             signal = ExternalOddsDivergence(policy=self.runtime.policy).evaluate(
                 market=market,
                 anchors=anchors,
@@ -113,6 +118,13 @@ class StrategyAutomation:
             if signal is not None:
                 est, sig = signal
                 out.append(CandidateResult(Strategy.EXTERNAL_ODDS_DIVERGENCE, est, sig))
+
+        # BTC threshold strategy — only fires for short-horizon BTC markets.
+        if self.btc_feed is not None:
+            btc_signal = await self._evaluate_btc_threshold(market)
+            if btc_signal is not None:
+                est, sig = btc_signal
+                out.append(CandidateResult(Strategy.BTC_THRESHOLD, est, sig))
 
         if self.news_adapter is not None and market.best_bid is not None and market.best_ask is not None:
             events = await self.news_adapter.events_for_market(market)
@@ -137,6 +149,63 @@ class StrategyAutomation:
                 est, sig = signal
                 out.append(CandidateResult(Strategy.NEWS_REPRICING, est, sig))
         return out
+
+    async def _evaluate_btc_threshold(
+        self, market: Market
+    ) -> tuple[ProbabilityEstimate, Signal] | None:
+        """Build a snapshot from the live BTC feed and run the threshold strategy."""
+        parsed = parse_btc_threshold(market.question)
+        if parsed is None:
+            return None
+        ttc = seconds_to_close(market.close_time)
+        if ttc <= 0:
+            return None
+
+        try:
+            quotes = await self.btc_feed.fetch()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.log(
+                actor="btc_feed",
+                action="fetch_failed",
+                market_id=market.id,
+                payload={"error": str(exc)[:200]},
+            )
+            return None
+
+        feed_summary = summarize(quotes)
+        if feed_summary is None:
+            return None
+
+        realized_vol = self.btc_feed.realized_volatility_annualized()
+        if realized_vol is None:
+            # Use a conservative default until enough samples accumulate (annualized 60%).
+            realized_vol = 0.60
+
+        snapshot = build_snapshot(
+            summary=feed_summary,
+            realized_vol=realized_vol,
+            price_to_beat=parsed.price_to_beat,
+            seconds_to_resolution=ttc,
+        )
+        self.logger.log(
+            actor="btc_feed",
+            action="snapshot",
+            market_id=market.id,
+            payload={
+                "spot_usd": feed_summary.median_price_usd,
+                "sources": list(feed_summary.sources),
+                "disagreement_bps": feed_summary.disagreement_bps,
+                "realized_vol": realized_vol,
+                "price_to_beat": parsed.price_to_beat,
+                "seconds_to_resolution": ttc,
+                "direction": parsed.direction,
+            },
+        )
+
+        return BtcThresholdStrategy(policy=self.runtime.policy).evaluate(
+            market=market,
+            snapshot=snapshot,
+        )
 
     async def _submit_candidate(self, market: Market, candidate: CandidateResult) -> dict:
         original_mode = self.runtime.policy.mode

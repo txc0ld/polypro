@@ -1,20 +1,31 @@
 mode: live_tiny
 
 market_filters:
-  min_liquidity_usd: 100000
-  min_volume_24h_usd: 25000
-  max_spread_pct: 5
-  min_depth_within_5c_usd: 10000
-  min_time_to_close_minutes: 60
-  max_time_to_close_minutes: 2160
+  # Broader admit window so the universe is not 1-2 markets. Quickfire scoring
+  # still ranks intraday liquid markets first; slower markets are scanned but
+  # the strategy_automation prioritizes by quickfire_score.
+  min_liquidity_usd: 10000
+  min_volume_24h_usd: 1000
+  max_spread_pct: 10
+  min_depth_within_5c_usd: 1000
+  min_time_to_close_minutes: 5
+  max_time_to_close_minutes: 10080  # 7 days
 
 risk:
-  bankroll_usdc: 1000
-  max_single_market_position_pct: 1
-  max_single_event_exposure_pct: 2.5
-  max_category_exposure_pct: 5
-  max_daily_loss_pct: 0.75
-  max_weekly_loss_pct: 2
+  bankroll_usdc: 39
+  # Operator absolute cap: $3 per order. The user's intent is "smallest
+  # possible live trades." Polymarket's venue minimum is 5 outcome shares;
+  # at a typical $0.40-0.60 mid that's ~$2.00-$3.00 USDC. Setting the cap
+  # to $3 means the formatter will floor every order to the venue minimum.
+  # Anything smaller gets SIZE_BELOW_MIN_ORDER_SIZE rejected.
+  max_order_usdc: 3.0
+  max_single_market_position_pct: 8
+  max_single_event_exposure_pct: 15
+  max_category_exposure_pct: 25
+  # Daily loss kill at ~$7.80 of $39 bankroll = ~2 fully-losing $3 orders.
+  # Tight but appropriate for a first live test on a small bankroll.
+  max_daily_loss_pct: 20
+  max_weekly_loss_pct: 30
   max_open_markets: 10
   max_orders_per_minute: 10
 
@@ -52,7 +63,7 @@ subagents:
 
 automation:
   enabled: true
-  allow_order_placement: false
+  allow_order_placement: true
   max_markets_per_strategy_cycle: 12
   external_anchors_path: configs/external_anchors.json
   news_max_items_per_feed: 20
