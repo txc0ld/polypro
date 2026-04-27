@@ -398,10 +398,15 @@ async def run_forever(
             try:
                 await resolution.tick()
             except Exception as exc:  # noqa: BLE001
-                rt.incidents.trip_degraded(
-                    code="RESOLUTION_TICK_FAILED", detail=str(exc), actor="resolution_monitor"
+                # Log but DO NOT trip_degraded for transient errors (Gamma
+                # 422 on conditionId lookup, network hiccup, etc.) — that
+                # would freeze trading on every tick. The scheduler already
+                # records the failure in subagent.last_error.
+                rt.logger.log(
+                    actor="resolution_monitor",
+                    action="tick_failed",
+                    payload={"error": str(exc)[:200]},
                 )
-                raise
 
         rt.scheduler.register(
             SubagentTask(
@@ -423,8 +428,10 @@ async def run_forever(
             try:
                 await order_sync.tick()
             except Exception as exc:  # noqa: BLE001
-                rt.incidents.trip_degraded(
-                    code="ORDER_SYNC_TICK_FAILED", detail=str(exc), actor="order_sync"
+                rt.logger.log(
+                    actor="order_sync",
+                    action="tick_failed",
+                    payload={"error": str(exc)[:200]},
                 )
 
         rt.scheduler.register(
