@@ -146,6 +146,12 @@ class BtcThresholdStrategy:
             resolution_risk=market.resolution_risk,
             half_spread_value=half_spread(market.best_bid, market.best_ask),
             fee_rate_bps=market.fee_rate_bps,
+            # Objective Chainlink-resolved markets get a much lower
+            # resolution-risk buffer than ambiguous-resolution markets.
+            # The 0.5x default eats 10c on a 0.20 prior — far too much
+            # for a market that resolves off a single oracle price.
+            resolution_risk_buffer_multiplier=0.10,
+            uncertainty_buffer_multiplier=0.25,
             reason_codes=[
                 "BTC_THRESHOLD_PUBLIC_FEED",
                 f"GAP:{snapshot.btc_spot - snapshot.price_to_beat:.2f}",

@@ -140,6 +140,13 @@ def build_estimate(
     expected_slippage: float = 0.005,
     fee_rate_bps: float | None = 0.0,
     liquidity_exit_buffer: float = 0.005,
+    # Caller-tunable buffer multipliers. The 0.5x defaults are conservative
+    # for ambiguous-resolution markets; objective oracle markets (BTC via
+    # Chainlink, sports moneyline via official scoreboards, weather via
+    # NOAA) should pass much lower multipliers — 0.10 for resolution_risk
+    # is reasonable for those.
+    resolution_risk_buffer_multiplier: float = 0.5,
+    uncertainty_buffer_multiplier: float = 0.5,
     reason_codes: list[str] | None = None,
     evidence_refs: list[str] | None = None,
     ttl_minutes: int = 30,
@@ -157,8 +164,8 @@ def build_estimate(
         half_spread_value=half_spread_value,
         expected_slippage=expected_slippage,
         fee=fee,
-        resolution_risk_buffer=resolution_risk * 0.5,
-        model_uncertainty_buffer=uncertainty * 0.5,
+        resolution_risk_buffer=resolution_risk * resolution_risk_buffer_multiplier,
+        model_uncertainty_buffer=uncertainty * uncertainty_buffer_multiplier,
         liquidity_exit_buffer=liquidity_exit_buffer,
     )
 
