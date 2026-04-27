@@ -322,7 +322,10 @@ async def run_forever(
     )
 
     if rt.store is not None and rt.policy.automation.enabled:
+        from pathlib import Path as _P
         from .adapters.btc_feed import BtcPriceFeed
+        from .adapters.commodities import CommoditiesFeed
+        from .adapters.macro_calendar import MacroCalendar
         from .adapters.odds_api import OddsAPIClient
 
         # Anchor adapter: prefer The Odds API when key is present; otherwise
@@ -341,6 +344,14 @@ async def run_forever(
             max_items_per_feed=rt.policy.automation.news_max_items_per_feed,
         )
         btc_feed = BtcPriceFeed()
+        commodities_feed = CommoditiesFeed()
+
+        # Macro calendar — operator-curated YAML. Missing file = empty calendar.
+        macro_path = _P("configs/macro_calendar.yaml")
+        macro_calendar = (
+            MacroCalendar.from_yaml(macro_path) if macro_path.exists() else None
+        )
+
         strategy_automation = StrategyAutomation(
             runtime=rt,
             store=rt.store,
@@ -348,6 +359,8 @@ async def run_forever(
             anchor_adapter=anchor_adapter,
             news_adapter=news_adapter,
             btc_feed=btc_feed,
+            commodities_feed=commodities_feed,
+            macro_calendar=macro_calendar,
             max_markets=rt.policy.automation.max_markets_per_strategy_cycle,
             allow_order_placement=rt.policy.automation.allow_order_placement,
         )

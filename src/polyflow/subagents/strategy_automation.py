@@ -43,6 +43,8 @@ class StrategyAutomation:
         anchor_adapter: AnchorAdapter | None = None,
         news_adapter: NewsAdapter | None = None,
         btc_feed: BtcPriceFeed | None = None,
+        commodities_feed=None,            # type: CommoditiesFeed | None
+        macro_calendar=None,              # type: MacroCalendar | None
         max_markets: int = 12,
         allow_order_placement: bool = False,
     ) -> None:
@@ -52,6 +54,8 @@ class StrategyAutomation:
         self.anchor_adapter = anchor_adapter
         self.news_adapter = news_adapter
         self.btc_feed = btc_feed
+        self.commodities_feed = commodities_feed
+        self.macro_calendar = macro_calendar
         self.max_markets = max_markets
         self.allow_order_placement = allow_order_placement
 
@@ -163,7 +167,9 @@ class StrategyAutomation:
     async def _evaluate_btc_threshold(
         self, market: Market
     ) -> tuple[ProbabilityEstimate, Signal] | None:
-        """Build a snapshot from the live BTC feed and run the threshold strategy."""
+        """Build a snapshot from the right feed (crypto vs commodity) and run the
+        threshold strategy. Pre-release blackout from the macro calendar
+        refuses outright."""
         parsed = parse_btc_threshold(market.question)
         if parsed is None:
             return None
@@ -171,6 +177,28 @@ class StrategyAutomation:
         if ttc <= 0:
             return None
 
+        # Macro pre-release blackout: refuse during the configured window.
+        if self.macro_calendar is not None:
+            blackout = self.macro_calendar.is_in_pre_release_window()
+            if blackout is not None:
+                self.logger.log(
+                    actor="macro_calendar",
+                    action="blackout_refusal",
+                    market_id=market.id,
+                    payload={
+                        "event_kind": blackout.kind,
+                        "event_title": blackout.title,
+                        "event_at": blackout.timestamp_utc.isoformat(),
+                    },
+                )
+                return None
+
+        is_commodity = parsed.asset in {"WTI", "OIL", "BRENT", "GOLD", "XAU", "SILVER", "XAG", "COPPER"}
+
+        if is_commodity:
+            return await self._evaluate_commodity_threshold(market, parsed, ttc)
+
+        # Crypto path
         try:
             quotes = await self.btc_feed.fetch(asset=parsed.asset)
         except Exception as exc:  # noqa: BLE001
@@ -224,6 +252,78 @@ class StrategyAutomation:
         return BtcThresholdStrategy(policy=self.runtime.policy).evaluate(
             market=market,
             snapshot=snapshot,
+        )
+
+    async def _evaluate_commodity_threshold(
+        self, market: Market, parsed, ttc: float
+    ) -> tuple[ProbabilityEstimate, Signal] | None:
+        """Commodity threshold path (WTI / GOLD / SILVER / COPPER).
+
+        Uses Yahoo Finance front-month futures via ``CommoditiesFeed``. No
+        perp basis (commodities don't have a uniform global perp). We
+        synthesize a ``BtcThresholdSnapshot`` from the spot quote so we can
+        reuse the lognormal threshold strategy unchanged.
+        """
+        if self.commodities_feed is None:
+            return None
+        try:
+            quote = await self.commodities_feed.fetch(parsed.asset)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.log(
+                actor="commodities_feed",
+                action="fetch_failed",
+                market_id=market.id,
+                payload={"error": str(exc)[:200], "asset": parsed.asset},
+            )
+            return None
+        if quote is None or quote.price_usd <= 0:
+            return None
+
+        realized_vol = self.commodities_feed.realized_volatility_annualized(parsed.asset)
+        if realized_vol is None:
+            # Conservative defaults until enough rolling samples accumulate.
+            # Annualized vol estimates: WTI ~35%, gold ~15%, silver ~25%, copper ~25%.
+            realized_vol = {
+                "WTI": 0.35, "OIL": 0.35, "BRENT": 0.35,
+                "GOLD": 0.15, "XAU": 0.15,
+                "SILVER": 0.25, "XAG": 0.25,
+                "COPPER": 0.25,
+            }.get(parsed.asset, 0.20)
+
+        # Build a BtcThresholdSnapshot directly — the strategy doesn't care
+        # what the asset *is*, only that the snapshot is valid + recent.
+        from ..strategies.btc_threshold import BtcThresholdSnapshot
+        snapshot = BtcThresholdSnapshot(
+            source_name=f"yahoo:{quote.yahoo_symbol}",
+            source_url="commodities_feed",
+            fetched_at=quote.fetched_at,
+            price_to_beat=parsed.price_to_beat,
+            btc_spot=quote.price_usd,           # field name kept for back-compat
+            seconds_to_resolution=ttc,
+            realized_volatility_annualized=realized_vol,
+            feed_disagreement_bps=0.0,          # single source — no disagreement
+            oracle_latency_seconds=0.0,
+            drift_adjustment=0.0,
+            settlement_match=True,
+        )
+
+        self.logger.log(
+            actor="commodities_feed",
+            action="snapshot",
+            market_id=market.id,
+            payload={
+                "asset": parsed.asset,
+                "spot_usd": quote.price_usd,
+                "yahoo_symbol": quote.yahoo_symbol,
+                "realized_vol": realized_vol,
+                "price_to_beat": parsed.price_to_beat,
+                "seconds_to_resolution": ttc,
+                "direction": parsed.direction,
+            },
+        )
+
+        return BtcThresholdStrategy(policy=self.runtime.policy).evaluate(
+            market=market, snapshot=snapshot,
         )
 
     async def _evaluate_crypto_momentum(
