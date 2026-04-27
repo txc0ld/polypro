@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
@@ -192,3 +192,65 @@ class RiskDecision(BaseModel):
     fractional_kelly: float = 0.0
     caps_applied: list[str] = Field(default_factory=list)
     reason_codes: list[str] = Field(default_factory=list)
+
+
+# --- CLOB user-channel WebSocket events (PRD §16.3) ----------------------
+
+
+class WSEventType(str, Enum):
+    FILL = "trade"
+    ORDER_UPDATE = "order"
+    CANCEL = "cancel"
+
+
+class WSFillEvent(BaseModel):
+    """A fill (trade) on the user channel."""
+
+    model_config = ConfigDict(frozen=True)
+
+    event_type: WSEventType = WSEventType.FILL
+    market_id: str
+    token_id: str
+    outcome: Outcome
+    side: Side
+    price: float = Field(ge=0.0, le=1.0)
+    size: float = Field(gt=0.0)
+    exchange_order_id: str | None = None
+    client_order_id: str | None = None
+    trade_id: str | None = None
+    fee_rate_bps: float = 0.0
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WSOrderUpdateEvent(BaseModel):
+    """An order status transition (placed, partial, matched, …)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    event_type: WSEventType = WSEventType.ORDER_UPDATE
+    market_id: str
+    token_id: str
+    exchange_order_id: str
+    client_order_id: str | None = None
+    status: str
+    size: float = 0.0
+    size_remaining: float = 0.0
+    price: float = 0.0
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class WSCancelEvent(BaseModel):
+    """An order cancel reported by the user channel."""
+
+    model_config = ConfigDict(frozen=True)
+
+    event_type: WSEventType = WSEventType.CANCEL
+    market_id: str
+    token_id: str
+    exchange_order_id: str
+    client_order_id: str | None = None
+    reason: str | None = None
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+WSEvent = WSFillEvent | WSOrderUpdateEvent | WSCancelEvent
