@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Card } from "@/components/Card";
+import { Card, EmptyState } from "@/components/Card";
+import { Pill } from "@/components/Pill";
 import { CalibrationDiagram } from "@/components/CalibrationDiagram";
 import { calibrationBuckets, listAllMarkets } from "@/lib/db";
 import { fmtNum, fmtPct, shortId } from "@/lib/format";
@@ -14,51 +15,62 @@ export default function ProbabilityIndex() {
     n: b.n,
   }));
   const totalN = buckets.reduce((a, b) => a + b.n, 0);
-  // Reliability gap = mean |predicted - empirical| weighted by n. Lower is better.
   const reliabilityGap =
     totalN === 0
       ? null
       : buckets.reduce(
-          (sum, b) =>
-            sum + Math.abs(b.mean_predicted - b.empirical) * b.n,
+          (sum, b) => sum + Math.abs(b.mean_predicted - b.empirical) * b.n,
           0,
         ) / totalN;
   return (
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Probability Lab</h1>
-        <span className="text-xs text-muted">PRD §19.3</span>
+        <div>
+          <h1 className="text-display font-semibold tracking-tight">
+            Probability Lab
+          </h1>
+          <p className="text-sm text-subtle">
+            Calibration diagnostics + per-market drilldowns
+          </p>
+        </div>
+        <Pill tone="muted">PRD §19.3</Pill>
       </header>
 
-      <Card title="Calibration reliability diagram">
+      <Card
+        title="calibration reliability"
+        action={
+          <span>
+            {totalN} obs ·{" "}
+            {reliabilityGap === null
+              ? "—"
+              : `gap ${fmtPct(reliabilityGap, 1)}`}
+          </span>
+        }
+      >
         <CalibrationDiagram data={points} />
-        <p className="mt-3 text-xs text-muted">
-          {totalN} observation{totalN === 1 ? "" : "s"} ·{" "}
-          {reliabilityGap === null
-            ? "—"
-            : `weighted reliability gap ${fmtPct(reliabilityGap, 1)}`}{" "}
-          · diagonal = perfect calibration
-        </p>
       </Card>
 
-      <Card title="Pick a market">
+      <Card title="markets" action={<span>{markets.length}</span>}>
         {markets.length === 0 ? (
-          <p className="text-sm text-muted">
-            No markets in the SQLite store yet.
-          </p>
+          <EmptyState
+            title="no markets in store"
+            hint="Run the bot or seed logs/polyflow.db to populate."
+          />
         ) : (
-          <ul className="space-y-1 text-sm">
-            {markets.map((m) => (
-              <li key={m.id} className="flex items-center justify-between">
+          <ul className="divide-y divide-hairline text-xs">
+            {markets.slice(0, 100).map((m) => (
+              <li key={m.id}>
                 <Link
                   href={`/probability/${encodeURIComponent(m.id)}`}
-                  className="text-accent hover:underline"
+                  className="flex items-center justify-between gap-3 px-2 py-2 transition-colors hover:bg-white/[0.02]"
                 >
-                  {m.question}
+                  <span className="truncate text-ink" title={m.question}>
+                    {m.question}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-subtle">
+                    {shortId(m.id, 10)} · q={fmtNum(m.market_quality, 2)}
+                  </span>
                 </Link>
-                <span className="text-xs text-muted">
-                  {shortId(m.id, 10)} · q={fmtNum(m.market_quality, 2)}
-                </span>
               </li>
             ))}
           </ul>
