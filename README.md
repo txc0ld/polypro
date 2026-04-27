@@ -109,9 +109,31 @@ Mirrors `client.createOrDeriveApiKey()` from `@polymarket/clob-client-v2`.
 ## Operations tools
 
 ```
-polyflow summarize-log     Actor / action / kill-switch / order counts from the log
-polyflow replay-trade      Pull every record relevant to one signal_id (audit)
+polyflow summarize-log       Actor / action / kill-switch / order counts from the log
+polyflow replay-trade        Pull every record relevant to one signal_id (audit)
+polyflow ghost-summary       Aggregate ghost-mode failure modes (Protocol §5)
+polyflow deployment-gates    Walk the five deployment gates (Protocol §7)
+polyflow reconcile           On-chain vs local-state drift check (Protocol §8)
 ```
+
+## Elite Trading Bot Protocol coverage
+
+Modules added under the protocol's mandates:
+
+| Section | Module(s) |
+|---|---|
+| §1 Data hygiene (3+ feeds, ns timestamps, tick filters, audit log) | `tick_pipeline.py`, `feed_health.py`, `tick_recorder.py` |
+| §2 Reality-grade simulator (depth, FIFO, fees, gas) | `simulator.py` |
+| §4 Expectancy / RTR / dynamic entry timing | `expectancy.py` |
+| §5 Ghost mode (real wallet, 0 USDC) | `adapters/ghost_clob.py` |
+| §7 Five-gate deployment workflow | `deployment_gates.py` |
+| §8 Daily on-chain reconciliation | `reconciliation.py` + `polyflow reconcile` |
+
+What's still operational time, not code:
+- 30-day own-tick recording (run `tick_recorder` continuously; protocol blocks deploy until you have it)
+- 72-hour ghost-mode soak (run the GhostCLOBAdapter for 72h before any capital moves)
+- 7-day live dry-run at 0.1% bankroll
+- VPS / RPC redundancy / latency to Polymarket contracts
 
 The `replay` module also supports programmatic trade reconstruction for
 calibration jobs and regression-testing policy changes.

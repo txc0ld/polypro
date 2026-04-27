@@ -313,6 +313,114 @@ def promotion_status_cmd(db_path: Path, log_path: Path, observer_days: int, pape
     )
 
 
+@main.command("ghost-summary")
+@click.option(
+    "--log",
+    "log_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default="logs/ghost.jsonl",
+    show_default=True,
+)
+def ghost_summary_cmd(log_path: Path) -> None:
+    """Aggregate ghost-mode failure modes (Protocol §5)."""
+    from .adapters.ghost_clob import summarize_ghost_log
+
+    rep = summarize_ghost_log(log_path)
+    click.echo(json.dumps({"total": rep.total, "by_reason": rep.by_reason}, indent=2))
+
+
+@main.command("deployment-gates")
+@click.option("--historical-markets", type=int, required=True)
+@click.option("--historical-pnl", type=float, default=0.0, show_default=True)
+@click.option("--sim-trades", type=int, default=0, show_default=True)
+@click.option("--sim-ev", type=float, default=0.0, show_default=True)
+@click.option("--sim-mdd", type=float, default=0.0, show_default=True)
+@click.option("--sim-wr", type=float, default=0.0, show_default=True)
+@click.option("--ghost-hours", type=float, default=0.0, show_default=True)
+@click.option("--ghost-orders", type=int, default=0, show_default=True)
+@click.option("--ghost-unhandled", type=int, default=0, show_default=True)
+@click.option("--dryrun-days", type=float, default=0.0, show_default=True)
+@click.option("--dryrun-bankroll-pct", type=float, default=0.0, show_default=True)
+@click.option("--dryrun-pnl", type=float, default=0.0, show_default=True)
+@click.option("--dryrun-kelly-breaches", type=int, default=0, show_default=True)
+def deployment_gates_cmd(
+    historical_markets: int,
+    historical_pnl: float,
+    sim_trades: int,
+    sim_ev: float,
+    sim_mdd: float,
+    sim_wr: float,
+    ghost_hours: float,
+    ghost_orders: int,
+    ghost_unhandled: int,
+    dryrun_days: float,
+    dryrun_bankroll_pct: float,
+    dryrun_pnl: float,
+    dryrun_kelly_breaches: int,
+) -> None:
+    """Walk the five deployment gates (Protocol §7)."""
+    from .deployment_gates import GateInputs, evaluate
+
+    decision = evaluate(
+        GateInputs(
+            historical_markets_validated=historical_markets,
+            historical_pnl_total_usd=historical_pnl,
+            simulation_trades=sim_trades,
+            simulation_ev_per_trade_usd=sim_ev,
+            simulation_max_drawdown_usd=sim_mdd,
+            simulation_realized_win_rate=sim_wr,
+            ghost_mode_hours=ghost_hours,
+            ghost_mode_orders_attempted=ghost_orders,
+            ghost_mode_unhandled_failure_modes=ghost_unhandled,
+            live_dryrun_days=dryrun_days,
+            live_dryrun_bankroll_pct_used=dryrun_bankroll_pct,
+            live_dryrun_pnl_total_usd=dryrun_pnl,
+            live_dryrun_kelly_breaches=dryrun_kelly_breaches,
+        )
+    )
+    click.echo(
+        json.dumps(
+            {
+                "stage": decision.stage,
+                "promote": decision.promote,
+                "blockers": list(decision.blockers),
+                "next_action": decision.next_action,
+            },
+            indent=2,
+        )
+    )
+
+
+@main.command()
+def reconcile() -> None:
+    """Compare live wallet positions with the local SQLite store (Protocol §8)."""
+    from .adapters.polymarket_user import PolymarketUserAdapter
+    from .persistence import SQLiteStore
+    from .reconciliation import reconcile as do_reconcile
+
+    creds = load_credentials()
+    addr = creds.funder_address or creds.wallet_address
+    if not addr:
+        click.echo("No wallet/funder address configured.", err=True)
+        raise SystemExit(2)
+
+    store = SQLiteStore("logs/polyflow.db")
+
+    async def _run() -> dict:
+        async with PolymarketUserAdapter(wallet_address=addr) as user:
+            rep = await do_reconcile(user=user, store=store)
+        return {
+            "on_chain_position_count": rep.on_chain_position_count,
+            "local_position_count": rep.local_position_count,
+            "missing_from_local": list(rep.missing_from_local),
+            "missing_from_chain": list(rep.missing_from_chain),
+            "drift_detected": rep.drift_detected,
+        }
+
+    out = asyncio.run(_run())
+    click.echo(json.dumps(out, indent=2))
+
+
 @main.command("summarize-log")
 @click.option("--log", "log_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
 def summarize_log_cmd(log_path: Path) -> None:
