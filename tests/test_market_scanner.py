@@ -157,7 +157,7 @@ class TestStrategyRouting:
                 make_market(
                     question="Will Bitcoin close above $120k by Friday?",
                     category="crypto",
-                    volume_24h_usd=150_000,
+                    volume_24h_usd=300_000,  # ≥ $250k scalp floor
                 )
             ],
             MarketFilters(),

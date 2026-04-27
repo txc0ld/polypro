@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..adapters.anchors import AnchorAdapter
-from ..adapters.btc_feed import BtcPriceFeed, build_snapshot, summarize
+from ..adapters.btc_feed import BtcPriceFeed, build_snapshot, fetch_perp_snapshot, summarize
 from ..adapters.news import NewsAdapter
 from ..adapters.polymarket_user import PolymarketUserAdapter
 from ..logger import ImmutableLogger
@@ -162,24 +162,27 @@ class StrategyAutomation:
             return None
 
         try:
-            quotes = await self.btc_feed.fetch()
+            quotes = await self.btc_feed.fetch(asset=parsed.asset)
         except Exception as exc:  # noqa: BLE001
             self.logger.log(
                 actor="btc_feed",
                 action="fetch_failed",
                 market_id=market.id,
-                payload={"error": str(exc)[:200]},
+                payload={"error": str(exc)[:200], "asset": parsed.asset},
             )
             return None
 
-        feed_summary = summarize(quotes)
+        # Pull perp basis + funding for crypto-scalp signals.
+        perp = await fetch_perp_snapshot(parsed.asset)
+        feed_summary = summarize(quotes, perp=perp)
         if feed_summary is None:
             return None
 
-        realized_vol = self.btc_feed.realized_volatility_annualized()
+        realized_vol = self.btc_feed.realized_volatility_annualized(asset=parsed.asset)
         if realized_vol is None:
-            # Use a conservative default until enough samples accumulate (annualized 60%).
-            realized_vol = 0.60
+            # Conservative default until samples accumulate. ETH/SOL are more
+            # volatile than BTC, so seed each asset with a higher floor.
+            realized_vol = {"BTC": 0.60, "ETH": 0.80, "SOL": 1.20}.get(parsed.asset, 0.80)
 
         snapshot = build_snapshot(
             summary=feed_summary,
@@ -192,6 +195,7 @@ class StrategyAutomation:
             action="snapshot",
             market_id=market.id,
             payload={
+                "asset": parsed.asset,
                 "spot_usd": feed_summary.median_price_usd,
                 "sources": list(feed_summary.sources),
                 "disagreement_bps": feed_summary.disagreement_bps,
@@ -199,6 +203,10 @@ class StrategyAutomation:
                 "price_to_beat": parsed.price_to_beat,
                 "seconds_to_resolution": ttc,
                 "direction": parsed.direction,
+                "perp_mark": perp.mark_price if perp else None,
+                "perp_index": perp.index_price if perp else None,
+                "perp_basis_bps": perp.basis_bps if perp else None,
+                "perp_funding_rate": perp.funding_rate if perp else None,
             },
         )
 

@@ -37,22 +37,70 @@ class _SourceQuote:
     fetched_at: datetime
 
 
+# Per-asset endpoint config: (asset_symbol, [(source, url, parser_fn), ...])
+_ASSET_ENDPOINTS: dict[str, tuple[tuple[str, str, callable], ...]] = {
+    "BTC": (
+        ("coingecko", "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", lambda d: d["bitcoin"]["usd"]),
+        ("binance", "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", lambda d: d["price"]),
+        ("coinbase", "https://api.coinbase.com/v2/prices/BTC-USD/spot", lambda d: d["data"]["amount"]),
+    ),
+    "ETH": (
+        ("coingecko", "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", lambda d: d["ethereum"]["usd"]),
+        ("binance", "https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT", lambda d: d["price"]),
+        ("coinbase", "https://api.coinbase.com/v2/prices/ETH-USD/spot", lambda d: d["data"]["amount"]),
+    ),
+    "SOL": (
+        ("coingecko", "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", lambda d: d["solana"]["usd"]),
+        ("binance", "https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", lambda d: d["price"]),
+        ("coinbase", "https://api.coinbase.com/v2/prices/SOL-USD/spot", lambda d: d["data"]["amount"]),
+    ),
+}
+
+# Binance USD-M perpetual futures premium index — gives spot/perp basis +
+# last funding rate + mark price. Per scalp doctrine: spot/perp divergence
+# is one of the cleanest BTC scalping signals.
+_PERP_PREMIUM_ENDPOINTS = {
+    "BTC": "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT",
+    "ETH": "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=ETHUSDT",
+    "SOL": "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=SOLUSDT",
+}
+
+
 @dataclass
 class BtcPriceFeed:
-    """Aggregates BTC spot prices from multiple public endpoints."""
+    """Multi-asset crypto spot price feed.
+
+    Name kept for back-compat. Now supports BTC / ETH / SOL via the
+    ``asset`` parameter on ``fetch``. Per-asset rolling history powers the
+    realized-volatility calculation.
+    """
 
     history_seconds: int = 600
     timeout_seconds: float = 5.0
-    _history: deque[tuple[float, float]] = field(default_factory=deque, init=False, repr=False)
+    asset: str = "BTC"
+    _history: dict[str, deque[tuple[float, float]]] = field(default_factory=dict, init=False, repr=False)
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
 
-    async def fetch(self, *, client: httpx.AsyncClient | None = None) -> list[_SourceQuote]:
-        """Pull a fresh snapshot from each source. Skips a source on any HTTP error."""
+    async def fetch(
+        self,
+        *,
+        client: httpx.AsyncClient | None = None,
+        asset: str | None = None,
+    ) -> list[_SourceQuote]:
+        """Pull a fresh snapshot for the given asset (default BTC).
+
+        Skips any source that returns an HTTP error or unparseable payload.
+        """
+        target = (asset or self.asset).upper()
+        endpoints = _ASSET_ENDPOINTS.get(target)
+        if not endpoints:
+            return []
+
         owns = client is None
         client = client or httpx.AsyncClient(timeout=self.timeout_seconds)
         out: list[_SourceQuote] = []
         try:
-            for source, url, parser in self._endpoints():
+            for source, url, parser in endpoints:
                 try:
                     resp = await client.get(url)
                     resp.raise_for_status()
@@ -64,7 +112,7 @@ class BtcPriceFeed:
                     continue
                 out.append(
                     _SourceQuote(
-                        source=source,
+                        source=f"{source}:{target}",
                         url=url,
                         price_usd=price,
                         fetched_at=datetime.now(timezone.utc),
@@ -74,46 +122,33 @@ class BtcPriceFeed:
             if owns:
                 await client.aclose()
 
-        # Record the median for vol computation
+        # Record the median into per-asset history for vol computation.
         if out:
             mid = statistics.median(q.price_usd for q in out)
             with self._lock:
-                self._history.append((time.time(), mid))
-                self._evict_stale()
+                self._history.setdefault(target, deque()).append((time.time(), mid))
+                self._evict_stale(target)
         return out
 
-    def _endpoints(self) -> Iterable[tuple[str, str, callable]]:
-        return (
-            (
-                "coingecko",
-                "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
-                lambda data: data["bitcoin"]["usd"],
-            ),
-            (
-                "binance",
-                "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
-                lambda data: data["price"],
-            ),
-            (
-                "coinbase",
-                "https://api.coinbase.com/v2/prices/BTC-USD/spot",
-                lambda data: data["data"]["amount"],
-            ),
-        )
-
-    def _evict_stale(self) -> None:
+    def _evict_stale(self, asset: str | None = None) -> None:
         cutoff = time.time() - self.history_seconds
-        while self._history and self._history[0][0] < cutoff:
-            self._history.popleft()
+        targets = [asset] if asset else list(self._history.keys())
+        for tgt in targets:
+            history = self._history.get(tgt)
+            if history is None:
+                continue
+            while history and history[0][0] < cutoff:
+                history.popleft()
 
-    def realized_volatility_annualized(self) -> float | None:
-        """Compute realized vol from the rolling price history.
+    def realized_volatility_annualized(self, asset: str | None = None) -> float | None:
+        """Compute realized vol from the rolling price history for the asset.
 
         Uses log-returns over the window, annualized. Returns None when fewer
-        than 2 samples are available.
+        than 3 samples are available (need 2 returns for pstdev).
         """
+        target = (asset or self.asset).upper()
         with self._lock:
-            samples = list(self._history)
+            samples = list(self._history.get(target, ()))
         if len(samples) < 2:
             return None
         returns: list[float] = []
@@ -139,14 +174,36 @@ def disagreement_bps(quotes: list[_SourceQuote]) -> float:
 
 
 @dataclass(frozen=True)
+class PerpSnapshot:
+    """Binance USD-M perp basis + funding for the asset."""
+
+    mark_price: float
+    index_price: float
+    funding_rate: float           # last funding rate, fraction (e.g. 0.0001 = 1bp)
+    next_funding_time_ms: int
+    fetched_at: datetime
+
+    @property
+    def basis_bps(self) -> float:
+        if self.index_price <= 0:
+            return 0.0
+        return ((self.mark_price - self.index_price) / self.index_price) * 10_000
+
+
+@dataclass(frozen=True)
 class FeedSummary:
     median_price_usd: float
     sources: tuple[str, ...]
     disagreement_bps: float
     fetched_at: datetime
+    perp: PerpSnapshot | None = None
 
 
-def summarize(quotes: list[_SourceQuote]) -> FeedSummary | None:
+def summarize(
+    quotes: list[_SourceQuote],
+    *,
+    perp: PerpSnapshot | None = None,
+) -> FeedSummary | None:
     if not quotes:
         return None
     return FeedSummary(
@@ -154,7 +211,39 @@ def summarize(quotes: list[_SourceQuote]) -> FeedSummary | None:
         sources=tuple(q.source for q in quotes),
         disagreement_bps=disagreement_bps(quotes),
         fetched_at=max(q.fetched_at for q in quotes),
+        perp=perp,
     )
+
+
+async def fetch_perp_snapshot(
+    asset: str, *, client: httpx.AsyncClient | None = None, timeout_seconds: float = 5.0
+) -> PerpSnapshot | None:
+    url = _PERP_PREMIUM_ENDPOINTS.get(asset.upper())
+    if not url:
+        return None
+    owns = client is None
+    client = client or httpx.AsyncClient(timeout=timeout_seconds)
+    try:
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+    finally:
+        if owns:
+            await client.aclose()
+
+    try:
+        return PerpSnapshot(
+            mark_price=float(data["markPrice"]),
+            index_price=float(data["indexPrice"]),
+            funding_rate=float(data.get("lastFundingRate") or 0.0),
+            next_funding_time_ms=int(data.get("nextFundingTime") or 0),
+            fetched_at=datetime.now(timezone.utc),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def build_snapshot(

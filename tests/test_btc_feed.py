@@ -29,7 +29,7 @@ async def test_fetch_aggregates_three_sources() -> None:
         quotes = await feed.fetch(client=client)
 
     assert len(quotes) == 3
-    assert {q.source for q in quotes} == {"coingecko", "binance", "coinbase"}
+    assert {q.source for q in quotes} == {"coingecko:BTC", "binance:BTC", "coinbase:BTC"}
 
 
 @pytest.mark.asyncio
@@ -48,7 +48,7 @@ async def test_one_source_failure_does_not_abort() -> None:
         quotes = await feed.fetch(client=client)
 
     assert len(quotes) == 2
-    assert "binance" not in {q.source for q in quotes}
+    assert "binance:BTC" not in {q.source for q in quotes}
 
 
 def test_disagreement_bps() -> None:

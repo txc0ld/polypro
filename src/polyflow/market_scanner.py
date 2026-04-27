@@ -29,10 +29,29 @@ FORBIDDEN_TEXT_TERMS: frozenset[str] = frozenset(
     }
 )
 
-QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 36 * 60
-QUICKFIRE_MAX_SPREAD_PCT = 2.5
-QUICKFIRE_MIN_VOLUME_24H_USD = 100_000
-QUICKFIRE_MIN_LIQUIDITY_USD = 100_000
+QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 72 * 60        # scalp doctrine: 72h max
+QUICKFIRE_MAX_SPREAD_PCT = 3.0                       # ≤3c
+QUICKFIRE_MIN_VOLUME_24H_USD = 250_000               # ≥$250k 24h volume
+QUICKFIRE_MIN_LIQUIDITY_USD = 100_000                # ≥$100k available liquidity
+
+# Day-trade avoid list: long-duration / non-scalpable markets per the user's
+# scalping doctrine. The scanner refuses anything matching these terms even
+# if the liquidity numbers look attractive.
+DAYTRADE_AVOID_TERMS: frozenset[str] = frozenset(
+    {
+        "world cup winner",
+        "presidential nominee",
+        "presidential election",
+        "champion 2026",   # NBA Champion / NHL Champion / etc. — long horizon
+        "champion 2027",
+        "champion 2028",
+        "drivers' champion",
+        "drivers champion",
+        "eurovision winner",
+        "election winner 2028",
+        "best picture",     # awards markets are long-duration with vague rules
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -86,6 +105,19 @@ def hard_skip_reasons(m: Market, f: MarketFilters) -> tuple[str, ...]:
         bad in text for bad in FORBIDDEN_TEXT_TERMS
     ):
         reasons.append("FORBIDDEN_CATEGORY")
+
+    # Long-horizon / non-scalpable per the day-trade avoid list.
+    if any(term in text for term in DAYTRADE_AVOID_TERMS):
+        reasons.append("LONG_HORIZON_AVOID")
+
+    # Price-zone gate (scalp doctrine: 20c-80c preferred; >95% priced markets
+    # are unscalpable).
+    if m.best_bid is not None and m.best_ask is not None:
+        mid = (m.best_bid + m.best_ask) / 2.0
+        if f.min_mid_price is not None and mid < f.min_mid_price:
+            reasons.append("PRICE_BELOW_MIN_ZONE")
+        if f.max_mid_price is not None and mid > f.max_mid_price:
+            reasons.append("PRICE_ABOVE_MAX_ZONE")
 
     return tuple(reasons)
 

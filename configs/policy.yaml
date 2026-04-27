@@ -1,15 +1,19 @@
 mode: live_tiny
 
 market_filters:
-  # Broader admit window so the universe is not 1-2 markets. Quickfire scoring
-  # still ranks intraday liquid markets first; slower markets are scanned but
-  # the strategy_automation prioritizes by quickfire_score.
-  min_liquidity_usd: 10000
-  min_volume_24h_usd: 1000
-  max_spread_pct: 10
-  min_depth_within_5c_usd: 1000
+  # Scalp / day-trade doctrine: same-day to 72h horizon, $250k+ volume,
+  # $100k+ liquidity, ≤3c spread, 20c-80c price zone. Anything outside
+  # this filter is not a day-trade candidate.
+  min_liquidity_usd: 100000
+  min_volume_24h_usd: 250000
+  max_spread_pct: 3
+  min_depth_within_5c_usd: 10000
   min_time_to_close_minutes: 5
-  max_time_to_close_minutes: 10080  # 7 days
+  max_time_to_close_minutes: 4320  # 72h
+  # New price-zone gate: skip markets priced outside this band — the bot
+  # cannot realistically scalp markets already at 95%+ certainty.
+  min_mid_price: 0.20
+  max_mid_price: 0.80
 
 risk:
   bankroll_usdc: 39

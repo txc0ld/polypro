@@ -102,7 +102,17 @@ class OddsAPIClient:
 
     @classmethod
     def from_env(cls, *, sports: Iterable[str] | None = None) -> "OddsAPIClient":
-        key = os.environ.get("THE_ODDS_API_KEY") or os.environ.get("POLY_ODDS_API_KEY")
+        # Accept several common env var names; check both real env and the
+        # project's .env.local so the runtime works without the operator
+        # having to also export the variable.
+        from ..secrets import load_env
+
+        merged = {**load_env(), **os.environ}
+        key = (
+            merged.get("THE_ODDS_API_KEY")
+            or merged.get("ODDS_API_KEY")
+            or merged.get("POLY_ODDS_API_KEY")
+        )
         return cls(api_key=key, sports=tuple(sports) if sports else DEFAULT_SPORTS)
 
     @property
@@ -240,20 +250,26 @@ def _anchors_from_events(
     q = _tokens(question)
     if not q:
         return []
-    home_tokens_in_question_first = False
     for event in events:
         score = question_match_score(question, event.home_team, event.away_team)
         if score < min_match_score:
             continue
 
-        # Decide YES side: if home tokens appear *earlier* in the question
-        # text, "home is YES." Otherwise treat away as YES.
-        home_idx = _earliest_index(question.lower(), event.home_team.lower())
-        away_idx = _earliest_index(question.lower(), event.away_team.lower())
-        home_is_yes = home_idx <= away_idx if (home_idx >= 0 and away_idx >= 0) else True
-        if event.home_team.lower() in question.lower() and event.away_team.lower() not in question.lower():
+        # Decide YES side: find the *earliest token* from each team that
+        # appears in the question and pick the team whose token comes first.
+        # Handles "Pistons vs. Magic" → Pistons is YES even though Pistons is
+        # the away team, because Polymarket's YES side is typically the team
+        # mentioned first in the question.
+        home_idx = _earliest_team_token_position(question, event.home_team)
+        away_idx = _earliest_team_token_position(question, event.away_team)
+        if home_idx < 0 and away_idx < 0:
+            continue  # neither team's token found — refuse
+        if home_idx < 0:
+            home_is_yes = False
+        elif away_idx < 0:
             home_is_yes = True
-            home_tokens_in_question_first = True
+        else:
+            home_is_yes = home_idx <= away_idx
 
         # If draw odds exist, build vig-stripped 2-way (YES vs NO=draw+other)
         # by combining draw + the other side's odds. Otherwise straight 2-way.
@@ -282,3 +298,18 @@ def _earliest_index(haystack: str, needle: str) -> int:
     if not needle:
         return -1
     return haystack.find(needle)
+
+
+def _earliest_team_token_position(question: str, team_name: str) -> int:
+    """Earliest position in ``question`` where any meaningful token from
+    ``team_name`` appears. Returns -1 when no team token is found.
+    """
+    q_lower = question.lower()
+    best = -1
+    for tok in _tokens(team_name):
+        idx = q_lower.find(tok)
+        if idx < 0:
+            continue
+        if best < 0 or idx < best:
+            best = idx
+    return best

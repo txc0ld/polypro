@@ -19,6 +19,10 @@ class MarketFilters(BaseModel):
     min_depth_within_5c_usd: float = 10_000
     min_time_to_close_minutes: int = 60
     max_time_to_close_minutes: int | None = None
+    # Price-zone gate (scalp doctrine): only admit markets with mid price
+    # inside [min_mid_price, max_mid_price]. None disables that side.
+    min_mid_price: float | None = None
+    max_mid_price: float | None = None
 
 
 class RiskLimits(BaseModel):

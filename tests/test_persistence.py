@@ -17,7 +17,7 @@ def _market() -> Market:
         close_time=datetime.now(timezone.utc) + timedelta(hours=12),
         resolution_rules="rules",
         liquidity_usd=200_000,
-        volume_24h_usd=150_000,
+        volume_24h_usd=300_000,  # ≥ $250k scalp floor
         spread_pct=2.0,
         depth_within_5c_usd=20_000,
         yes_token_id="t-yes",
