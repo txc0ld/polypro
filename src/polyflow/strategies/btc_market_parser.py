@@ -24,9 +24,15 @@ _THRESHOLD_TERMS = ("above", "below", "over", "under", "reach", "hit", "exceed",
 # Asset detection. Word-boundary patterns so "ETH" doesn't match inside
 # "ethnicity" / etc. Order matters for fall-through readability.
 _ASSET_PATTERNS = (
-    ("BTC", re.compile(r"\b(?:bitcoin|btc)\b", re.IGNORECASE)),
-    ("ETH", re.compile(r"\b(?:ethereum|ether|eth)\b", re.IGNORECASE)),
-    ("SOL", re.compile(r"\b(?:solana|sol)\b", re.IGNORECASE)),
+    ("BTC",    re.compile(r"\b(?:bitcoin|btc)\b", re.IGNORECASE)),
+    ("ETH",    re.compile(r"\b(?:ethereum|ether|eth)\b", re.IGNORECASE)),
+    ("SOL",    re.compile(r"\b(?:solana|sol)\b", re.IGNORECASE)),
+    # Commodities — per the EV-harvester target shortlist (gold/oil markets
+    # have clean external truth via Yahoo Finance front-month futures).
+    ("WTI",    re.compile(r"\b(?:wti|crude\s*oil|oil)\b", re.IGNORECASE)),
+    ("GOLD",   re.compile(r"\b(?:gold|xau)\b", re.IGNORECASE)),
+    ("SILVER", re.compile(r"\b(?:silver|xag)\b", re.IGNORECASE)),
+    ("COPPER", re.compile(r"\bcopper\b", re.IGNORECASE)),
 )
 
 

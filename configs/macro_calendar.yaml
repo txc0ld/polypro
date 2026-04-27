@@ -1,0 +1,36 @@
+# Macro events calendar — operator-curated.
+#
+# Per the EV-harvester protocol: do not pre-position blindly. Use this
+# calendar to drive pre/post-release windows. Strategies can refuse to
+# trade in the pre-release blackout (default 30min) and rate-limit during
+# the post-release reaction window (default 5min).
+#
+# Supported `kind` values:
+#   FOMC              FOMC rate decision
+#   FOMC_MINUTES      FOMC minutes release
+#   CPI               US Consumer Price Index
+#   PCE               Personal Consumption Expenditures
+#   NFP               Non-Farm Payrolls
+#   EIA_PETROLEUM     EIA weekly oil inventory
+#   TREASURY_AUCTION  US Treasury auction
+#
+# All timestamps are UTC. Update this file weekly with the next set of
+# scheduled releases. Example placeholder entries below — replace with
+# real upcoming release times before relying on the windows.
+
+events: []
+
+# Example (uncomment and edit before going live):
+# events:
+#   - kind: FOMC
+#     title: "FOMC rate decision"
+#     timestamp_utc: "2026-04-30T18:00:00Z"
+#   - kind: CPI
+#     title: "April CPI release"
+#     timestamp_utc: "2026-05-13T12:30:00Z"
+#   - kind: NFP
+#     title: "May NFP release"
+#     timestamp_utc: "2026-06-05T12:30:00Z"
+#   - kind: EIA_PETROLEUM
+#     title: "Weekly oil inventory"
+#     timestamp_utc: "2026-04-30T14:30:00Z"

@@ -39,6 +39,11 @@ DEFAULT_SPORTS = (
     "soccer_italy_serie_a",
     "soccer_spain_la_liga",
     "soccer_germany_bundesliga",
+    # Esports — added per the user's target shortlist.
+    "esports_dota_2",
+    "esports_lol",
+    "esports_csgo",
+    "esports_valorant",
 )
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
