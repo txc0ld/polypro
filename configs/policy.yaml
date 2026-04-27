@@ -38,8 +38,11 @@ risk:
 
 kelly:
   fraction: 0.05
-  # Protocol "small trade" tier floor (2c). Below this, refuse outright.
-  min_effective_edge: 0.02
+  # 1c floor — live diagnosis showed BTC threshold signals were producing
+  # genuine 1.3c edge after costs but getting rejected at 2c. Below the
+  # protocol's "small trade" 2c tier, but above zero. Tighten back to 0.02
+  # once the wire is proven and the buffer model is calibrated.
+  min_effective_edge: 0.01
   max_model_uncertainty: 0.12
 
 orders:
