@@ -45,19 +45,32 @@ async def derive_api_credentials(
     chain_id: int = POLYGON_MAINNET_CHAIN_ID,
     client: httpx.AsyncClient | None = None,
 ) -> DerivedCredentials:
-    """Sign the ClobAuth message with ``private_key`` and call /auth/api-key.
+    """Sign the ClobAuth message with ``private_key`` and obtain the L2 key set.
 
-    Returns the L2 credentials. Mirrors ``client.createOrDeriveApiKey()`` from
-    the official TS CLOB SDK.
+    Mirrors ``client.createOrDeriveApiKey()`` from the official TS CLOB SDK:
+    tries ``GET /auth/derive-api-key`` first (returns the existing key set if
+    one was already created for this address), falling back to
+    ``POST /auth/api-key`` if no key exists yet.
     """
-    headers = sign_l1_auth(private_key=private_key, chain_id=chain_id).as_dict()
-
+    base = base_url.rstrip("/")
     owns = client is None
     client = client or httpx.AsyncClient(timeout=15.0)
     try:
-        resp = await client.post(f"{base_url.rstrip('/')}/auth/api-key", headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+        # Each attempt re-signs to keep the timestamp fresh.
+        derive_headers = sign_l1_auth(private_key=private_key, chain_id=chain_id).as_dict()
+        resp = await client.get(f"{base}/auth/derive-api-key", headers=derive_headers)
+
+        if resp.status_code == 200:
+            data = resp.json()
+        elif resp.status_code in (400, 404):
+            # No existing key — create one.
+            create_headers = sign_l1_auth(private_key=private_key, chain_id=chain_id).as_dict()
+            resp = await client.post(f"{base}/auth/api-key", headers=create_headers)
+            resp.raise_for_status()
+            data = resp.json()
+        else:
+            resp.raise_for_status()
+            data = resp.json()
     finally:
         if owns:
             await client.aclose()
@@ -66,7 +79,9 @@ async def derive_api_credentials(
     secret = data.get("secret")
     passphrase = data.get("passphrase")
     if not (api_key and secret and passphrase):
-        raise RuntimeError(f"Polymarket /auth/api-key returned an unexpected payload: keys={list(data)}")
+        raise RuntimeError(
+            f"Polymarket auth endpoint returned an unexpected payload: keys={list(data)}"
+        )
     return DerivedCredentials(api_key=api_key, secret=secret, passphrase=passphrase)
 
 
@@ -147,32 +162,28 @@ class PolymarketCLOBTradeAdapter:
                 await client.aclose()
 
     # ---- public API ----
+    # Endpoint paths follow the Polymarket CLOB convention:
+    #   GET  /data/orders           open orders for caller
+    #   GET  /data/trades           trade history
+    #   POST /order                 place a single order
+    #   DELETE /order               cancel a single order (body: {orderID})
+    #   DELETE /orders              cancel many (body: list of orderIDs)
+    #   GET  /balance-allowances    balance + allowance info
+
     async def get_open_orders(self) -> list[dict]:
-        return await self._request("GET", "/orders") or []
+        return await self._request("GET", "/data/orders") or []
+
+    async def get_trades(self) -> list[dict]:
+        return await self._request("GET", "/data/trades") or []
 
     async def get_positions(self) -> list[Position]:
-        # Production reads positions from the Data API (see polymarket_user.py),
-        # but the L2 endpoint is also available and is auth-checked.
-        rows = await self._request("GET", "/positions")
-        out: list[Position] = []
-        for r in rows or []:
-            try:
-                out.append(
-                    Position(
-                        market_id=str(r.get("market_id") or r.get("marketId") or ""),
-                        token_id=str(r.get("token_id") or r.get("tokenId") or ""),
-                        outcome=r.get("outcome") or "YES",
-                        size=float(r.get("size") or 0),
-                        avg_price=float(r.get("avg_price") or r.get("avgPrice") or 0),
-                    )
-                )
-            except (TypeError, ValueError, KeyError):
-                continue
-        return out
+        # Positions are not exposed on the CLOB; use polymarket_user.py against
+        # the Data API for the production read path.
+        return []
 
     async def cancel_order(self, exchange_order_id: str) -> bool:
-        path = f"/orders/{exchange_order_id}"
-        await self._request("DELETE", path)
+        # DELETE /order with the orderID in the JSON body.
+        await self._request("DELETE", "/order", body={"orderID": exchange_order_id})
         return True
 
     async def place_order(self, payload: OrderPayload, *, neg_risk: bool = False) -> dict:

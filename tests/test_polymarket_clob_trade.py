@@ -42,7 +42,7 @@ async def test_get_open_orders_attaches_l2_headers() -> None:
         rows = await adapter.get_open_orders()
 
     assert rows == [{"id": "o1"}]
-    assert seen["path"] == "/orders"
+    assert seen["path"] == "/data/orders"
     h = seen["headers"]
     assert h["poly_api_key"].startswith("550e8400")
     assert h["poly_passphrase"] == "passphrase"

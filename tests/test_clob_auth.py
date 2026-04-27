@@ -98,35 +98,67 @@ class TestL1Signing:
 
 
 @pytest.mark.asyncio
-async def test_derive_api_credentials_e2e() -> None:
-    """End-to-end derivation against a mocked /auth/api-key endpoint."""
+async def test_derive_api_credentials_existing_key() -> None:
+    """GET /auth/derive-api-key returns 200 → use that response (existing key)."""
     from polyflow.adapters.polymarket_clob_trade import derive_api_credentials
 
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen["headers"] = dict(request.headers)
-        seen["path"] = request.url.path
-        return httpx.Response(
-            200,
-            json={
-                "apiKey": "550e8400-e29b-41d4-a716-446655440000",
-                "secret": base64.urlsafe_b64encode(b"x" * 32).decode().rstrip("="),
-                "passphrase": "passphrase-string",
-            },
-        )
+        seen.setdefault("requests", []).append((request.method, request.url.path))
+        seen["last_headers"] = dict(request.headers)
+        if request.url.path == "/auth/derive-api-key":
+            return httpx.Response(
+                200,
+                json={
+                    "apiKey": "550e8400-e29b-41d4-a716-446655440000",
+                    "secret": base64.urlsafe_b64encode(b"x" * 32).decode().rstrip("="),
+                    "passphrase": "passphrase-string",
+                },
+            )
+        return httpx.Response(500, json={"error": "should not reach"})
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         creds = await derive_api_credentials(private_key=TEST_PRIVATE_KEY, client=client)
 
-    assert seen["path"] == "/auth/api-key"
-    # All four POLY_* headers were attached and pass through
-    h = {k.lower(): v for k, v in seen["headers"].items()}
+    assert seen["requests"] == [("GET", "/auth/derive-api-key")]
+    h = {k.lower(): v for k, v in seen["last_headers"].items()}
     assert h["poly_address"].lower() == TEST_ADDRESS.lower()
-    assert h["poly_timestamp"]
+    assert h["poly_signature"].startswith("0x")
     assert h["poly_nonce"] == "0"
-    assert h["poly_signature"].startswith(("0x", "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "a", "b", "c", "d", "e", "f")) or len(h["poly_signature"]) > 0
-
     assert creds.api_key.startswith("550e8400")
     assert creds.passphrase == "passphrase-string"
+
+
+@pytest.mark.asyncio
+async def test_derive_api_credentials_falls_back_to_create() -> None:
+    """If derive returns 400 (no existing key), fall back to POST /auth/api-key."""
+    from polyflow.adapters.polymarket_clob_trade import derive_api_credentials
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.setdefault("requests", []).append((request.method, request.url.path))
+        if request.url.path == "/auth/derive-api-key":
+            return httpx.Response(400, json={"error": "no key"})
+        if request.url.path == "/auth/api-key" and request.method == "POST":
+            return httpx.Response(
+                200,
+                json={
+                    "apiKey": "abcdef12-3456-7890-abcd-ef1234567890",
+                    "secret": base64.urlsafe_b64encode(b"y" * 32).decode().rstrip("="),
+                    "passphrase": "new-pass",
+                },
+            )
+        return httpx.Response(500)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        creds = await derive_api_credentials(private_key=TEST_PRIVATE_KEY, client=client)
+
+    assert seen["requests"] == [
+        ("GET", "/auth/derive-api-key"),
+        ("POST", "/auth/api-key"),
+    ]
+    assert creds.api_key.startswith("abcdef12")

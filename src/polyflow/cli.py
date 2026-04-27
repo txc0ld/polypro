@@ -196,40 +196,74 @@ def derive_creds(write: bool) -> None:
     derived = out.pop("_full")
 
     if write:
+        import re
+
         env_path = Path(".env.local")
         existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-        lines: list[str] = []
-        for key, value in (
-            ("POLY_API_KEY", derived.api_key),
-            ("POLY_API_SECRET", derived.secret),
-            ("POLY_API_PASSPHRASE", derived.passphrase),
-        ):
-            if key in existing or key.replace("_", "") in existing:
-                continue
-            lines.append(f"{key}={value}")
-        if lines:
-            with env_path.open("a", encoding="utf-8") as f:
-                if existing and not existing.endswith("\n"):
-                    f.write("\n")
-                f.write("\n".join(lines) + "\n")
-            click.echo(f"Wrote {len(lines)} new keys to {env_path}.", err=True)
+
+        updates = (
+            ("POLY_API_KEY", derived.api_key, ("POLY_API_KEY", "POLYAPIKEY")),
+            ("POLY_API_SECRET", derived.secret, ("POLY_API_SECRET", "POLYAPISECRET")),
+            ("POLY_API_PASSPHRASE", derived.passphrase, ("POLY_API_PASSPHRASE", "POLYAPIPASSPHRASE")),
+        )
+
+        body = existing
+        replaced = 0
+        appended: list[str] = []
+        for canonical, value, aliases in updates:
+            line = f"{canonical}={value}"
+            # Exact-line match for any alias name; otherwise append.
+            pattern = re.compile(
+                rf"^(?:{'|'.join(re.escape(a) for a in aliases)})\s*[:=].*$",
+                re.MULTILINE,
+            )
+            if pattern.search(body):
+                body = pattern.sub(line, body)
+                replaced += 1
+            else:
+                appended.append(line)
+
+        if appended:
+            if body and not body.endswith("\n"):
+                body += "\n"
+            body += "\n".join(appended) + "\n"
+
+        env_path.write_text(body, encoding="utf-8")
+        click.echo(
+            f"Updated {replaced} existing keys, appended {len(appended)} new keys to {env_path}.",
+            err=True,
+        )
 
     click.echo(json.dumps(out, indent=2))
 
 
 @main.command()
 @click.option("--limit", type=int, default=50, show_default=True)
-def positions(limit: int) -> None:
-    """Fetch the live wallet's positions from the Polymarket Data API."""
+@click.option(
+    "--user",
+    "user_override",
+    default=None,
+    help="Address to query (default: POLY_FUNDER_ADDRESS if set, else POLY_WALLET_ADDRESS).",
+)
+def positions(limit: int, user_override: str | None) -> None:
+    """Fetch positions from the Polymarket Data API.
+
+    Defaults to the funder/proxy address (where outcome tokens actually live for
+    browser-onboarded users). Falls back to the EOA if no funder is configured.
+    """
     creds = load_credentials()
-    if not creds.wallet_address:
-        click.echo("No wallet address configured. Set POLY_WALLET_ADDRESS or POLYAPIADDRESS.", err=True)
+    target = user_override or creds.funder_address or creds.wallet_address
+    if not target:
+        click.echo(
+            "No address configured. Set POLY_FUNDER_ADDRESS or POLY_WALLET_ADDRESS.",
+            err=True,
+        )
         raise SystemExit(2)
 
     from .adapters.polymarket_user import PolymarketUserAdapter
 
     async def _run() -> list[dict]:
-        async with PolymarketUserAdapter(wallet_address=creds.wallet_address) as adapter:
+        async with PolymarketUserAdapter(wallet_address=target) as adapter:
             return await adapter.positions()
 
     rows = asyncio.run(_run())

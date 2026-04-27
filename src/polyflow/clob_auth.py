@@ -123,11 +123,16 @@ def sign_l1_auth(
     )
     signable = encode_typed_data(full_message=typed)
     signed = account.sign_message(signable)
+    sig_hex = (
+        signed.signature.hex()
+        if isinstance(signed.signature, bytes)
+        else str(signed.signature)
+    )
+    if not sig_hex.startswith("0x"):
+        sig_hex = "0x" + sig_hex
     return L1AuthHeaders(
         POLY_ADDRESS=account.address,
-        POLY_SIGNATURE=signed.signature.hex()
-        if isinstance(signed.signature, bytes)
-        else str(signed.signature),
+        POLY_SIGNATURE=sig_hex,
         POLY_TIMESTAMP=timestamp,
         POLY_NONCE=str(nonce),
     )
@@ -146,8 +151,10 @@ def sign_l2(
 ) -> str:
     """HMAC-SHA256(secret, timestamp + METHOD + path + body), base64url-encoded.
 
-    Polymarket's CLOB derives the secret as a base64-encoded byte string;
-    we decode before HMAC.
+    Polymarket's CLOB derives the secret as a url-safe base64 string; we decode
+    it (with padding repair) before keying the HMAC. The output keeps the
+    standard ``=`` padding — py-clob-client keeps it and Polymarket validates
+    against that exact form.
     """
     try:
         secret_bytes = base64.urlsafe_b64decode(secret + "=" * (-len(secret) % 4))
@@ -155,7 +162,7 @@ def sign_l2(
         secret_bytes = secret.encode("utf-8")
     msg = (timestamp + method.upper() + path + (body or "")).encode("utf-8")
     digest = hmac.new(secret_bytes, msg, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return base64.urlsafe_b64encode(digest).decode("ascii")
 
 
 def l2_headers(
