@@ -30,7 +30,8 @@ def main() -> None:
 @click.option("--db", "db_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/polyflow.db", show_default=True)
 @click.option("--scan-seconds", type=int, default=300, show_default=True)
 @click.option("--live-scanner/--stub-scanner", default=False, show_default=True)
-@click.option("--gamma-limit", type=int, default=200, show_default=True)
+@click.option("--gamma-limit", type=int, default=500, show_default=True, help="Markets per Gamma page (max 500).")
+@click.option("--gamma-pages", type=int, default=1, show_default=True, help="Pages to fetch per scan (1=top500, 6=full universe).")
 @click.option("--live-trading/--paper-trading", default=False, show_default=True)
 def run(
     config_path: Path,
@@ -39,6 +40,7 @@ def run(
     scan_seconds: int,
     live_scanner: bool,
     gamma_limit: int,
+    gamma_pages: int,
     live_trading: bool,
 ) -> None:
     """Run the runtime. Live scanner uses public Polymarket reads only."""
@@ -61,6 +63,7 @@ def run(
             str(log_path),
             db_path=str(db_path),
             gamma_limit=gamma_limit,
+            gamma_pages=gamma_pages,
             clob=clob,
             wallet_address=creds.funder_address or creds.wallet_address,
         )
@@ -76,8 +79,9 @@ def run(
 @click.option("--log", "log_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
 @click.option("--db", "db_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/polyflow.db", show_default=True)
 @click.option("--live/--stub", "live_scanner", default=False, show_default=True)
-@click.option("--gamma-limit", type=int, default=200, show_default=True)
-def scan_once(config_path: Path, log_path: Path, db_path: Path, live_scanner: bool, gamma_limit: int) -> None:
+@click.option("--gamma-limit", type=int, default=500, show_default=True)
+@click.option("--gamma-pages", type=int, default=1, show_default=True)
+def scan_once(config_path: Path, log_path: Path, db_path: Path, live_scanner: bool, gamma_limit: int, gamma_pages: int) -> None:
     """Run a single scanner tick. --live pulls public Polymarket markets."""
     policy = Policy.from_yaml(config_path)
     if live_scanner:
@@ -86,6 +90,7 @@ def scan_once(config_path: Path, log_path: Path, db_path: Path, live_scanner: bo
             str(log_path),
             db_path=str(db_path),
             gamma_limit=gamma_limit,
+            gamma_pages=gamma_pages,
         )
     else:
         rt = build_default_runtime(policy, str(log_path), db_path=str(db_path))

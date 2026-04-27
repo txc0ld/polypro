@@ -272,15 +272,23 @@ def build_live_scanner_runtime(
     *,
     db_path: str | None = None,
     gamma_limit: int = 200,
+    gamma_pages: int = 1,
     clob: CLOBAdapter | None = None,
     wallet_address: str | None = None,
 ) -> Runtime:
-    """Build a read-only live scanner runtime using public Polymarket feeds."""
+    """Build a read-only live scanner runtime using public Polymarket feeds.
+
+    ``gamma_pages > 1`` paginates the Gamma /markets call so the scanner
+    sees thousands of markets per cycle (each page is up to 500 markets,
+    sorted by 24h volume desc — page 1 is top-volume, deeper pages are
+    fast-moving / lower-volume markets the top sort misses).
+    """
     return Runtime(
         policy=policy,
         gamma=PolymarketGammaAdapter(
             enrich_order_books=True,
             max_order_book_enrich=gamma_limit,
+            default_max_pages=gamma_pages,
         ),
         clob=clob or PaperCLOBAdapter(),
         logger=ImmutableLogger(log_path, code_version="dev", config_hash=policy.config_hash),

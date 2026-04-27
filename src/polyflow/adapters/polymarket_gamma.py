@@ -129,12 +129,14 @@ class PolymarketGammaAdapter:
         client: httpx.AsyncClient | None = None,
         enrich_order_books: bool = False,
         max_order_book_enrich: int = 80,
+        default_max_pages: int = 1,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
         self._client = client
         self._enrich_order_books = enrich_order_books
         self._max_order_book_enrich = max_order_book_enrich
+        self._default_max_pages = max(1, default_max_pages)
 
     async def __aenter__(self) -> "PolymarketGammaAdapter":
         if self._client is None:
@@ -146,33 +148,57 @@ class PolymarketGammaAdapter:
             await self._client.aclose()
             self._client = None
 
-    async def list_active_markets(self, *, limit: int = 200) -> list[Market]:
+    async def list_active_markets(
+        self,
+        *,
+        limit: int = 200,
+        max_pages: int | None = None,
+    ) -> list[Market]:
+        """Fetch active markets, optionally paginating across ``max_pages`` pages.
+
+        Polymarket Gamma caps each request at ~500. To sweep the full active
+        universe (often 1000-3000 markets) pass ``max_pages > 1``. Pages are
+        ordered by 24h volume descending, so page N contains progressively
+        lower-volume / fast-moving markets that the top-page sort misses.
+        """
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
         owns = self._client is None
+        per_page_limit = min(500, limit)
+        pages = max(1, max_pages if max_pages is not None else self._default_max_pages)
+        all_records: list[dict] = []
         try:
-            resp = await client.get(
-                f"{self._base_url}/markets",
-                params={
-                    "active": "true",
-                    "closed": "false",
-                    "limit": limit,
-                    "order": "volume24hr",
-                    "ascending": "false",
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            for page in range(pages):
+                offset = page * per_page_limit
+                resp = await client.get(
+                    f"{self._base_url}/markets",
+                    params={
+                        "active": "true",
+                        "closed": "false",
+                        "limit": per_page_limit,
+                        "offset": offset,
+                        "order": "volume24hr",
+                        "ascending": "false",
+                    },
+                )
+                if resp.status_code != 200:
+                    break
+                data = resp.json()
+                records = data if isinstance(data, list) else data.get("markets", [])
+                if not records:
+                    break
+                all_records.extend(records)
+                # Stop early if Gamma returned fewer than a full page (we hit the tail).
+                if len(records) < per_page_limit:
+                    break
         finally:
             if owns:
                 await client.aclose()
 
         markets: list[Market] = []
-        records = data if isinstance(data, list) else data.get("markets", [])
-        for raw in records:
+        for raw in all_records:
             try:
                 markets.append(parse_gamma_market(raw))
             except Exception:  # noqa: BLE001
-                # Defensive: a single malformed record never kills a scan tick.
                 continue
         if self._enrich_order_books:
             markets = await self._with_order_book_depth(markets)
