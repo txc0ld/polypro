@@ -140,6 +140,38 @@ class BtcPriceFeed:
             while history and history[0][0] < cutoff:
                 history.popleft()
 
+    def momentum(self, *, asset: str | None = None, window_seconds: float = 300.0) -> MomentumSnapshot | None:
+        """Compute price velocity (bps/min) and range (bps) over the last
+        ``window_seconds`` for the given asset. Returns None when fewer than
+        2 samples fall inside the window.
+        """
+        target = (asset or self.asset).upper()
+        with self._lock:
+            samples = list(self._history.get(target, ()))
+        if len(samples) < 2:
+            return None
+        cutoff = time.time() - window_seconds
+        window = [(t, p) for (t, p) in samples if t >= cutoff and p > 0]
+        if len(window) < 2:
+            return None
+        prices = [p for _t, p in window]
+        first_t, first_p = window[0]
+        last_t, last_p = window[-1]
+        elapsed = max(last_t - first_t, 1.0)
+        # bps/min = (last - first) / first × 10000 / minutes
+        bps_per_min = ((last_p - first_p) / first_p) * 10_000 * (60.0 / elapsed)
+        high = max(prices)
+        low = min(prices)
+        range_bps = ((high - low) / first_p) * 10_000 if first_p > 0 else 0.0
+        return MomentumSnapshot(
+            window_seconds=elapsed,
+            n_samples=len(window),
+            velocity_bps_per_min=bps_per_min,
+            range_bps=range_bps,
+            high_usd=high,
+            low_usd=low,
+        )
+
     def realized_volatility_annualized(self, asset: str | None = None) -> float | None:
         """Compute realized vol from the rolling price history for the asset.
 
@@ -191,18 +223,39 @@ class PerpSnapshot:
 
 
 @dataclass(frozen=True)
+class MomentumSnapshot:
+    """Short-window price velocity + range (wick) features.
+
+    Two scalp setups consume this:
+      - "Spot breaks level" → if velocity_bps_per_min > +X and Polymarket
+        price for the YES side has not repriced, buy YES.
+      - "Large wick → market overreacts" → if range_bps over the recent
+        window is large but velocity has flattened, fade the extreme.
+    """
+
+    window_seconds: float
+    n_samples: int
+    velocity_bps_per_min: float
+    range_bps: float
+    high_usd: float
+    low_usd: float
+
+
+@dataclass(frozen=True)
 class FeedSummary:
     median_price_usd: float
     sources: tuple[str, ...]
     disagreement_bps: float
     fetched_at: datetime
     perp: PerpSnapshot | None = None
+    momentum: MomentumSnapshot | None = None
 
 
 def summarize(
     quotes: list[_SourceQuote],
     *,
     perp: PerpSnapshot | None = None,
+    momentum: MomentumSnapshot | None = None,
 ) -> FeedSummary | None:
     if not quotes:
         return None
@@ -212,6 +265,7 @@ def summarize(
         disagreement_bps=disagreement_bps(quotes),
         fetched_at=max(q.fetched_at for q in quotes),
         perp=perp,
+        momentum=momentum,
     )
 
 

@@ -18,6 +18,7 @@ from ..logger import ImmutableLogger
 from ..persistence import SQLiteStore
 from ..strategies.btc_market_parser import parse_btc_threshold, seconds_to_close
 from ..strategies.btc_threshold import BtcThresholdStrategy
+from ..strategies.crypto_momentum import CryptoMomentumInputs, CryptoMomentumStrategy
 from ..strategies.external_odds_divergence import ExternalOddsDivergence
 from ..strategies.news_repricing import NewsRepricingStrategy
 from ..types import Market, Mode, ProbabilityEstimate, Signal, Strategy
@@ -119,11 +120,20 @@ class StrategyAutomation:
                 est, sig = signal
                 out.append(CandidateResult(Strategy.EXTERNAL_ODDS_DIVERGENCE, est, sig))
 
-        # BTC threshold strategy — only fires for short-horizon BTC markets.
+        # BTC / ETH / SOL threshold strategy — only fires for short-horizon
+        # crypto threshold markets. Two evaluators run in series: the
+        # baseline lognormal threshold (btc_threshold) and the momentum /
+        # wick-fade strategy (crypto_momentum). Both produce candidates;
+        # the signal_arbiter scoring picks the best.
         if self.btc_feed is not None:
             btc_signal = await self._evaluate_btc_threshold(market)
             if btc_signal is not None:
                 est, sig = btc_signal
+                out.append(CandidateResult(Strategy.BTC_THRESHOLD, est, sig))
+
+            momentum_signal = await self._evaluate_crypto_momentum(market)
+            if momentum_signal is not None:
+                est, sig = momentum_signal
                 out.append(CandidateResult(Strategy.BTC_THRESHOLD, est, sig))
 
         if self.news_adapter is not None and market.best_bid is not None and market.best_ask is not None:
@@ -172,9 +182,10 @@ class StrategyAutomation:
             )
             return None
 
-        # Pull perp basis + funding for crypto-scalp signals.
+        # Pull perp basis + funding + momentum (rolling 5min window).
         perp = await fetch_perp_snapshot(parsed.asset)
-        feed_summary = summarize(quotes, perp=perp)
+        momentum = self.btc_feed.momentum(asset=parsed.asset, window_seconds=300.0)
+        feed_summary = summarize(quotes, perp=perp, momentum=momentum)
         if feed_summary is None:
             return None
 
@@ -214,6 +225,72 @@ class StrategyAutomation:
             market=market,
             snapshot=snapshot,
         )
+
+    async def _evaluate_crypto_momentum(
+        self, market: Market
+    ) -> tuple[ProbabilityEstimate, Signal] | None:
+        """Run the momentum / wick-fade strategy against the rolling feed."""
+        parsed = parse_btc_threshold(market.question)
+        if parsed is None:
+            return None
+        ttc = seconds_to_close(market.close_time)
+        if ttc <= 0:
+            return None
+
+        # Reuse the latest quotes / perp / momentum (from the same tick path
+        # that btc_threshold ran). We re-fetch — strategy_automation runs
+        # both evaluators inline; re-fetching keeps each evaluator
+        # self-contained even though it spends one extra HTTP hop.
+        try:
+            quotes = await self.btc_feed.fetch(asset=parsed.asset)
+        except Exception:  # noqa: BLE001
+            return None
+        if not quotes:
+            return None
+
+        perp = await fetch_perp_snapshot(parsed.asset)
+        momentum = self.btc_feed.momentum(asset=parsed.asset, window_seconds=300.0)
+        if momentum is None or perp is None:
+            return None
+
+        from statistics import median
+        spot = median(q.price_usd for q in quotes)
+        from .. import adapters  # noqa: F401  (importable surface)
+        from ..adapters.btc_feed import disagreement_bps
+
+        realized_vol = self.btc_feed.realized_volatility_annualized(asset=parsed.asset)
+        if realized_vol is None:
+            realized_vol = {"BTC": 0.60, "ETH": 0.80, "SOL": 1.20}.get(parsed.asset, 0.80)
+
+        inputs = CryptoMomentumInputs(
+            asset=parsed.asset,
+            spot_usd=spot,
+            perp_basis_bps=perp.basis_bps,
+            feed_disagreement_bps=disagreement_bps(quotes),
+            velocity_bps_per_min=momentum.velocity_bps_per_min,
+            range_bps=momentum.range_bps,
+            window_seconds=momentum.window_seconds,
+            n_samples=momentum.n_samples,
+            realized_vol_annualized=realized_vol,
+        )
+
+        result = CryptoMomentumStrategy(policy=self.runtime.policy).evaluate(
+            market=market, inputs=inputs
+        )
+        if result is not None:
+            self.logger.log(
+                actor="crypto_momentum",
+                action="signal",
+                market_id=market.id,
+                payload={
+                    "asset": parsed.asset,
+                    "velocity_bps_per_min": momentum.velocity_bps_per_min,
+                    "range_bps": momentum.range_bps,
+                    "perp_basis_bps": perp.basis_bps,
+                    "edge_after_costs": result[0].edge_after_costs,
+                },
+            )
+        return result
 
     async def _submit_candidate(self, market: Market, candidate: CandidateResult) -> dict:
         original_mode = self.runtime.policy.mode
