@@ -38,7 +38,8 @@ risk:
 
 kelly:
   fraction: 0.05
-  min_effective_edge: 0.03
+  # Protocol "small trade" tier floor (2c). Below this, refuse outright.
+  min_effective_edge: 0.02
   max_model_uncertainty: 0.12
 
 orders:

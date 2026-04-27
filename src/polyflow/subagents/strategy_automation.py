@@ -123,37 +123,14 @@ class StrategyAutomation:
     async def _evaluate_market(self, market: Market) -> list[CandidateResult]:
         out: list[CandidateResult] = []
 
-        # Intra-market arbitrage detector (log-only for now — true atomic
-        # two-leg execution requires a separate code path; we still surface
-        # opportunities in the immutable trail for manual review).
-        if (
-            market.best_bid is not None
-            and market.best_ask is not None
-            and market.depth_within_5c_usd > 0
-        ):
-            no_ask = 1.0 - market.best_bid
-            opp = detect_arbitrage(
-                market_id=market.id,
-                yes_ask=market.best_ask,
-                no_ask=no_ask,
-                yes_depth_usd=market.depth_within_5c_usd,
-                no_depth_usd=market.depth_within_5c_usd,
-                fee_rate_bps=market.fee_rate_bps or 0,
-                slippage_bps_each_side=5.0,
-                min_lock_pct=self.runtime.policy.kelly.arbitrage_min_lock_pct,
-            )
-            if opp is not None:
-                self.logger.log(
-                    actor="intra_market_arbitrage",
-                    action="opportunity",
-                    market_id=market.id,
-                    payload={
-                        "combined_ask": opp.combined_ask,
-                        "lock_per_unit": opp.lock_per_unit,
-                        "lock_after_costs": opp.lock_after_costs,
-                        "max_size_usd": opp.max_size_usd,
-                    },
-                )
+        # Intra-market arbitrage detector — disabled for now. Detecting
+        # YES+NO < 0.995 requires reading the *NO* token's order book; we
+        # only have the YES book on Market.best_bid/best_ask. The previous
+        # implementation used (1 - YES_bid) as a proxy for NO_ask, which
+        # mathematically always returns combined_ask = 1 + spread > 1, so
+        # the detector never fired. Proper detection needs an extra CLOB
+        # call for market.no_token_id; tracked as follow-up.
+        _ = detect_arbitrage  # keep import live for the eventual wiring
 
         # Near-expiry certainty scalper — only valid in the final 15min
         # window when raw external data already implies the outcome.

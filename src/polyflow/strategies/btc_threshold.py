@@ -67,12 +67,15 @@ class BtcThresholdStrategy:
     """Public BTC threshold model. Emits a Signal only when edge survives costs."""
 
     policy: Policy
-    max_feed_age_seconds: int = 8
-    max_feed_disagreement_bps: float = 8.0
-    max_oracle_latency_seconds: float = 20.0
-    min_seconds_to_resolution: float = 20.0
-    max_seconds_to_resolution: float = 300.0
-    max_late_entry_seconds: float = 45.0
+    # Defaults relaxed for the "daily / weekly threshold" universe the user
+    # is actually trading. The 5-min-bar-only originals (8s feed age,
+    # 5-min max horizon) gated all current Polymarket BTC markets out.
+    max_feed_age_seconds: int = 120         # was 8 — 1-min spot polling is fine for daily horizon
+    max_feed_disagreement_bps: float = 25.0 # was 8 — broader source spread tolerated for daily horizon
+    max_oracle_latency_seconds: float = 120.0
+    min_seconds_to_resolution: float = 60.0
+    max_seconds_to_resolution: float = 7 * 24 * 3600.0  # 7 days — admits daily/weekly threshold markets
+    max_late_entry_seconds: float = 60.0
 
     def evaluate(
         self,

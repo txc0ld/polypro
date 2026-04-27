@@ -92,18 +92,20 @@ class TestBtcThresholdSignal:
         assert sig.token_id == "down-token"
 
     def test_stale_feed_rejected(self) -> None:
+        # Feed-age threshold relaxed to 120s for daily horizon. Use 200s.
         out = btc_threshold_signal(
             policy=Policy(),
             market=_market(),
-            snapshot=_snapshot(fetched_at=_now() - timedelta(seconds=30)),
+            snapshot=_snapshot(fetched_at=_now() - timedelta(seconds=200)),
         )
         assert out is None
 
     def test_feed_disagreement_rejected(self) -> None:
+        # Disagreement threshold relaxed to 25 bps. Use 50 to clearly fail.
         out = btc_threshold_signal(
             policy=Policy(),
             market=_market(),
-            snapshot=_snapshot(feed_disagreement_bps=20.0),
+            snapshot=_snapshot(feed_disagreement_bps=50.0),
         )
         assert out is None
 
