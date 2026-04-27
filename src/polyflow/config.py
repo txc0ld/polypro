@@ -68,6 +68,26 @@ class SubagentCadence(BaseModel):
     news_context_monitor_seconds: int = 60
     portfolio_sentinel_seconds: int = 30
     market_scanner_minutes: int = 5
+    reference_repo_monitor_seconds: int = 3600
+
+
+class ReferenceRepoConfig(BaseModel):
+    name: str
+    repo_url: str
+    purpose: str
+    integration_mode: str
+    pinned_commit: str | None = None
+    expected_path: str | None = None
+    local_path_env: str | None = None
+    required_files: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class AutomationConfig(BaseModel):
+    enabled: bool = True
+    require_pinned_commits: bool = True
+    sources: list[ReferenceRepoConfig] = Field(default_factory=list)
 
 
 class Policy(BaseModel):
@@ -78,6 +98,7 @@ class Policy(BaseModel):
     orders: OrderRules = Field(default_factory=OrderRules)
     integrity: IntegrityRules = Field(default_factory=IntegrityRules)
     subagents: SubagentCadence = Field(default_factory=SubagentCadence)
+    automation: AutomationConfig = Field(default_factory=AutomationConfig)
 
     config_hash: str = ""
 

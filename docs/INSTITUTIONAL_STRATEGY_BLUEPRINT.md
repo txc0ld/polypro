@@ -20,6 +20,10 @@ Sources checked:
 | Polymarket negative-risk docs: https://docs.polymarket.com/advanced/neg-risk | Neg-risk events allow conversion relationships across mutually exclusive outcomes. Augmented neg-risk requires ignoring unnamed placeholders and treating `Other` carefully. |
 | Polymarket liquidity rewards docs: https://docs.polymarket.com/market-makers/liquidity-rewards | Rewards favor resting liquidity, two-sided depth, tight quotes, and eligible size/spread. April 2026 incentives are concentrated in sports and esports. |
 | Arbitrage in Prediction Markets paper: https://arxiv.org/abs/2508.03474 | Related outcome sets should sum to 1, but empirical mispricings exist; scalable detection requires grouping related markets and validating exhaustiveness/mutual exclusivity. |
+| poly_data: https://github.com/warproxxx/poly_data | Historical market, Goldsky order-filled, and processed trade CSV pipeline for backtests and wallet replay. Pinned in `configs/policy.yaml` at `b7c1d1703d6a3d1dfaa5f49c9ef7b4b899775392`. |
+| Polymarket CLI: https://github.com/Polymarket/polymarket-cli | Official Rust CLI exposing market scans, CLOB reads, and authenticated order commands with JSON output. Pinned at `4b5a749d5bf04f23611544a059e2a15c7281ae83`. |
+| Polymarket agents: https://github.com/Polymarket/agents | Python agent framework reference for public-source reasoning, RAG, Gamma access, and LLM tool contracts. Pinned at `081f2b5594c37edeb9d3780a778c084d5b6f2743`. |
+| polymarket-trade-engine: https://github.com/KaustubhPatange/polymarket-trade-engine | 5-minute lifecycle, orderbook tracker, ticker, wallet tracker, and simulation patterns. Pinned at `b941451fb2a65cfc721c73bdc92e0a3e4b7c9a4f`. |
 | Practical Polymarket/BTC 5-minute guide: https://github.com/KaustubhPatange/polymarket-trade-engine/blob/master/docs/LEARNING.md | Useful mechanics summary for CLOB fills, BTC threshold markets, buy-side fee effects on net received shares, CTF mint/redeem, and oracle-resolution differences. |
 
 ## Opinionated Priority
@@ -306,6 +310,26 @@ LIVE_TINY -> LIVE_STANDARD:
 | P1 | Add source-level calibration tables keyed by source, market category, and horizon. | Static reliability is not institutional. |
 | P1 | Add evidence packs for every signal with source URL, hash, timestamp, parser version, and settlement-rule mapping. | Reproducibility is the desk audit trail. |
 | P2 | Add GTD order type once adapter support is complete. | Quotes should auto-expire before catalysts and market close. |
+
+## Reference Repo Automation
+
+POLYFLOW now treats the four external repos as pinned automation inputs rather
+than code to import directly. The `reference_repo_monitor` subagent checks
+local materialization, required files, optional command availability, and pinned
+commit drift, then persists results to SQLite for the operations dashboard.
+
+| Repo | Automation input | Readiness checks |
+|---|---|---|
+| `warproxxx/poly_data` | Backtest and wallet-replay data source | `update_all.py`, `update_utils/process_live.py`, `poly_utils/utils.py`, pinned commit |
+| `Polymarket/polymarket-cli` | Scan/order command reference | `Cargo.toml`, CLOB/market command modules, `polymarket` command availability, pinned commit |
+| `Polymarket/agents` | Agent/RAG reference surface | trade application, Gamma connector, object models, pinned commit |
+| `KaustubhPatange/polymarket-trade-engine` | 5-minute engine architecture | lifecycle, simulation, orderbook tracker files, pinned commit |
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| Upstream behavior changes after this audit | High | Pin commits in policy and emit `PIN_MISMATCH` until reviewed. |
+| Local clone missing or stale | Medium | Dashboard and `polyflow automation-sources` surface `LOCAL_SOURCE_NOT_FOUND` or commit drift before automation consumes it. |
+| External CLI accidentally bypasses POLYFLOW gates | Medium | Treat CLI as an inspected command surface; live orders still pass POLYFLOW scanner, risk, formatter, hook, and immutable log gates. |
 
 ## Candidate Trade JSON Contract
 

@@ -25,13 +25,13 @@ from .signals import decide_action, score_signal
 from .subagents import SubagentScheduler, SubagentTask
 from .subagents.heartbeat import Heartbeat
 from .subagents.order_sync import OrderSync
+from .subagents.reference_repo_monitor import ReferenceRepoMonitor
 from .subagents.resolution_monitor import ResolutionMonitor
 from .types import (
     Mode,
     OrderType,
     ProbabilityEstimate,
     RiskState,
-    Side,
     Signal,
     Strategy,
 )
@@ -256,6 +256,19 @@ async def run_forever(
     """Minimal 24/7 loop. Subagent cadences run via the scheduler in production."""
     if rt.heartbeat is not None:
         rt.scheduler.register(SubagentTask(name="heartbeat", period_seconds=10.0, fn=rt.heartbeat.tick))
+    if rt.policy.automation.enabled:
+        reference_repo_monitor = ReferenceRepoMonitor(
+            policy=rt.policy,
+            logger=rt.logger,
+            store=rt.store,
+        )
+        rt.scheduler.register(
+            SubagentTask(
+                name="reference_repo_monitor",
+                period_seconds=float(rt.policy.subagents.reference_repo_monitor_seconds),
+                fn=reference_repo_monitor.tick,
+            )
+        )
     rt.scheduler.register(
         SubagentTask(
             name="market_scanner",

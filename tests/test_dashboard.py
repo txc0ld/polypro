@@ -120,6 +120,23 @@ async def _seed_paths(tmp_path: Path) -> tuple[Path, Path, Path]:
             size=5.0,
             status="OPEN",
         )
+        store.upsert_automation_source(
+            {
+                "name": "poly_data",
+                "repo_url": "https://github.com/warproxxx/poly_data",
+                "purpose": "Historical trade data",
+                "integration_mode": "historical_backtest_data",
+                "enabled": True,
+                "pinned_commit": "b7c1d1703d6a3d1dfaa5f49c9ef7b4b899775392",
+                "local_path": "/tmp/poly_data",
+                "detected_commit": "b7c1d1703d6a3d1dfaa5f49c9ef7b4b899775392",
+                "status": "ready",
+                "reason_codes": [],
+                "required_files": ["update_all.py"],
+                "commands": [],
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
     finally:
         store.close()
 
@@ -176,7 +193,14 @@ async def test_get_api_state_returns_dashboard_snapshot(tmp_path: Path) -> None:
     payload = json.loads(body)
     assert status == 200
     assert headers["content-type"].startswith("application/json")
-    assert set(payload) >= {"summary", "signals", "positions", "orders", "heartbeat"}
+    assert set(payload) >= {
+        "summary",
+        "signals",
+        "positions",
+        "orders",
+        "heartbeat",
+        "automation_sources",
+    }
     assert payload["summary"]["total_records"] == 1
     assert payload["summary"]["placed_orders"] == 1
     assert payload["summary"]["watching_markets"] == 1
@@ -184,6 +208,8 @@ async def test_get_api_state_returns_dashboard_snapshot(tmp_path: Path) -> None:
     assert payload["signals"][0]["market_id"] == "m-dashboard"
     assert payload["positions"][0]["market_id"] == "m-dashboard"
     assert payload["orders"][0]["exchange_order_id"] == "order-dashboard"
+    assert payload["summary"]["automation_sources_ready"] == 1
+    assert payload["automation_sources"][0]["name"] == "poly_data"
 
 
 @pytest.mark.asyncio

@@ -135,6 +135,22 @@ CREATE TABLE IF NOT EXISTS source_reliability (
   brier_sum REAL NOT NULL DEFAULT 0.0,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS automation_sources (
+  name TEXT PRIMARY KEY,
+  repo_url TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  integration_mode TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  pinned_commit TEXT,
+  local_path TEXT,
+  detected_commit TEXT,
+  status TEXT NOT NULL,
+  reason_codes TEXT NOT NULL,
+  required_files TEXT NOT NULL,
+  commands TEXT NOT NULL,
+  checked_at TEXT NOT NULL
+);
 """
 
 
@@ -497,6 +513,65 @@ class SQLiteStore:
                 "SELECT * FROM source_reliability ORDER BY hits + misses DESC"
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---------- automation source readiness ----------
+    def upsert_automation_source(self, status: dict) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO automation_sources (
+                    name, repo_url, purpose, integration_mode, enabled,
+                    pinned_commit, local_path, detected_commit, status,
+                    reason_codes, required_files, commands, checked_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(name) DO UPDATE SET
+                    repo_url=excluded.repo_url,
+                    purpose=excluded.purpose,
+                    integration_mode=excluded.integration_mode,
+                    enabled=excluded.enabled,
+                    pinned_commit=excluded.pinned_commit,
+                    local_path=excluded.local_path,
+                    detected_commit=excluded.detected_commit,
+                    status=excluded.status,
+                    reason_codes=excluded.reason_codes,
+                    required_files=excluded.required_files,
+                    commands=excluded.commands,
+                    checked_at=excluded.checked_at
+                """,
+                (
+                    status["name"],
+                    status["repo_url"],
+                    status["purpose"],
+                    status["integration_mode"],
+                    1 if status["enabled"] else 0,
+                    status.get("pinned_commit"),
+                    status.get("local_path"),
+                    status.get("detected_commit"),
+                    status["status"],
+                    json.dumps(status.get("reason_codes", [])),
+                    json.dumps(status.get("required_files", [])),
+                    json.dumps(status.get("commands", [])),
+                    status["checked_at"],
+                ),
+            )
+
+    def list_automation_sources(self) -> list[dict]:
+        with self._cursor() as cur:
+            rows = cur.execute(
+                "SELECT * FROM automation_sources ORDER BY status, name"
+            ).fetchall()
+        out: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["enabled"] = bool(item["enabled"])
+            for key in ("reason_codes", "required_files", "commands"):
+                try:
+                    item[key] = json.loads(item[key])
+                except (TypeError, json.JSONDecodeError):
+                    item[key] = []
+            item["ok"] = item["status"] == "ready"
+            out.append(item)
+        return out
 
     def close(self) -> None:
         with self._lock:

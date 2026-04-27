@@ -55,6 +55,11 @@ INDEX_HTML = """<!doctype html>
         <strong id="metric-open-orders">0</strong>
         <small id="metric-orders-placed">0 placed orders</small>
       </article>
+      <article class="metric accent-green">
+        <span>Automation Sources</span>
+        <strong id="metric-automation">0/0</strong>
+        <small>pinned repo readiness</small>
+      </article>
       <article class="metric accent-cyan">
         <span>Avg Signal Score</span>
         <strong id="metric-score">0.00</strong>
@@ -143,6 +148,17 @@ INDEX_HTML = """<!doctype html>
           <span id="reliability-count">0 rows</span>
         </div>
         <div id="reliability-list" class="stack-list" aria-live="polite"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Automation</p>
+            <h2>Reference Repos</h2>
+          </div>
+          <span id="automation-count">0 rows</span>
+        </div>
+        <div id="automation-list" class="stack-list" aria-live="polite"></div>
       </article>
 
       <article class="panel">
@@ -773,6 +789,7 @@ DASHBOARD_JS = r"""
     setText("metric-risk", money(s.bankroll_at_risk));
     setText("metric-open-orders", field(s, ["open_orders"], orders.length));
     setText("metric-orders-placed", `${number(s.placed_orders, 0)} placed orders`);
+    setText("metric-automation", `${number(s.automation_sources_ready, 0)}/${number(s.automation_sources_total, 0)}`);
     setText("metric-score", number(s.average_signal_score));
     setText("metric-signal-count", `${signals.length} recent signals`);
     setText("metric-kill", number(s.kill_switch_events, 0));
@@ -923,6 +940,35 @@ DASHBOARD_JS = r"""
     }
   }
 
+  function renderAutomation(rows) {
+    const list = $("automation-list");
+    if (!list) return;
+    clearNode(list);
+    setText("automation-count", `${rows.length} rows`);
+    if (!rows.length) {
+      list.appendChild(empty("Reference repo monitor has not checked sources yet."));
+      return;
+    }
+
+    for (const source of rows) {
+      const item = document.createElement("div");
+      item.className = "row-item";
+      const ok = Boolean(field(source, ["ok"], false));
+      item.appendChild(textNode("strong", "", field(source, ["name"], "source")));
+      item.appendChild(tag(field(source, ["status"], "unknown"), ok ? "green" : "amber"));
+      appendLine(item, "Mode", field(source, ["integration_mode"], "n/a"));
+      appendLine(item, "Pinned", value(field(source, ["pinned_commit"], "")).slice(0, 12) || "n/a");
+      appendLine(item, "Detected", value(field(source, ["detected_commit"], "")).slice(0, 12) || "n/a");
+      const reasons = field(source, ["reason_codes"], []);
+      item.appendChild(textNode(
+        "div",
+        "row-meta mono",
+        Array.isArray(reasons) && reasons.length ? reasons.slice(0, 3).join(" | ") : "ready"
+      ));
+      list.appendChild(item);
+    }
+  }
+
   function renderLog(rows) {
     const list = $("log-list");
     if (!list) return;
@@ -1002,6 +1048,7 @@ DASHBOARD_JS = r"""
     renderOrders(Array.isArray(snapshot.orders) ? snapshot.orders : []);
     renderMarkets(snapshot.markets && Array.isArray(snapshot.markets.watching) ? snapshot.markets.watching : []);
     renderReliability(Array.isArray(snapshot.source_reliability) ? snapshot.source_reliability : []);
+    renderAutomation(Array.isArray(snapshot.automation_sources) ? snapshot.automation_sources : []);
     renderLog(Array.isArray(snapshot.log_tail) ? snapshot.log_tail : []);
     renderIntents(Array.isArray(snapshot.operator_intents) ? snapshot.operator_intents : []);
   }

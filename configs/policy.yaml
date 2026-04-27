@@ -45,3 +45,55 @@ subagents:
   news_context_monitor_seconds: 60
   portfolio_sentinel_seconds: 30
   market_scanner_minutes: 5
+  reference_repo_monitor_seconds: 3600
+
+automation:
+  enabled: true
+  require_pinned_commits: true
+  sources:
+    - name: poly_data
+      repo_url: https://github.com/warproxxx/poly_data
+      purpose: Historical trade data for backtesting and wallet replay.
+      integration_mode: historical_backtest_data
+      pinned_commit: b7c1d1703d6a3d1dfaa5f49c9ef7b4b899775392
+      expected_path: external/poly_data
+      local_path_env: POLYFLOW_POLY_DATA_PATH
+      required_files:
+        - update_all.py
+        - update_utils/process_live.py
+        - poly_utils/utils.py
+    - name: polymarket-cli
+      repo_url: https://github.com/Polymarket/polymarket-cli
+      purpose: Official command surface for market scanning, order inspection, and guarded order workflows.
+      integration_mode: external_cli_surface
+      pinned_commit: 4b5a749d5bf04f23611544a059e2a15c7281ae83
+      expected_path: external/polymarket-cli
+      local_path_env: POLYFLOW_POLYMARKET_CLI_PATH
+      required_files:
+        - Cargo.toml
+        - src/commands/clob.rs
+        - src/commands/markets.rs
+      commands:
+        - polymarket
+    - name: polymarket-agents
+      repo_url: https://github.com/Polymarket/agents
+      purpose: Agent/RAG framework reference for public-source reasoning and LLM tool contracts.
+      integration_mode: agent_framework_reference
+      pinned_commit: 081f2b5594c37edeb9d3780a778c084d5b6f2743
+      expected_path: external/agents
+      local_path_env: POLYFLOW_POLYMARKET_AGENTS_PATH
+      required_files:
+        - agents/application/trade.py
+        - agents/polymarket/gamma.py
+        - agents/utils/objects.py
+    - name: polymarket-trade-engine
+      repo_url: https://github.com/KaustubhPatange/polymarket-trade-engine
+      purpose: 5-minute market engine architecture reference for lifecycle, ticker, and simulation patterns.
+      integration_mode: five_minute_engine_reference
+      pinned_commit: b941451fb2a65cfc721c73bdc92e0a3e4b7c9a4f
+      expected_path: external/polymarket-trade-engine
+      local_path_env: POLYFLOW_TRADE_ENGINE_PATH
+      required_files:
+        - engine/market-lifecycle.ts
+        - engine/strategy/simulation.ts
+        - tracker/orderbook.ts

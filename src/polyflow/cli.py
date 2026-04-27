@@ -10,6 +10,7 @@ from pathlib import Path
 import click
 
 from .calibration import report as calibration_report
+from .automation_sources import check_sources
 from .config import Policy
 from .promotion import PromotionInputs, evaluate as evaluate_promotion
 from .replay import reconstruct_trade, summarize as summarize_log
@@ -159,6 +160,41 @@ def creds_check() -> None:
     """Print a redacted summary of loaded credentials and what's still missing."""
     creds = load_credentials()
     click.echo(json.dumps(credentials_summary(creds), indent=2))
+
+
+@main.command("automation-sources")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default="configs/policy.yaml",
+    show_default=True,
+)
+@click.option(
+    "--root",
+    "root_path",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("."),
+    show_default=True,
+)
+def automation_sources_cmd(config_path: Path, root_path: Path) -> None:
+    """Check pinned reference repos used by automation."""
+    policy = Policy.from_yaml(config_path)
+    statuses = check_sources(
+        policy.automation.sources,
+        root=root_path,
+        require_pinned_commit=policy.automation.require_pinned_commits,
+    )
+    click.echo(
+        json.dumps(
+            {
+                "ready": sum(1 for status in statuses if status.ok),
+                "total": len(statuses),
+                "sources": [status.as_dict() for status in statuses],
+            },
+            indent=2,
+        )
+    )
 
 
 @main.command("derive-creds")

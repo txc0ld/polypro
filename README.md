@@ -128,9 +128,32 @@ polyflow dashboard --db logs/polyflow.db --log logs/immutable.jsonl
 Then open `http://127.0.0.1:8643`.
 
 The dashboard streams heartbeat, open positions, open orders, recent signals,
-watched markets, source reliability, calibration/CLV summary, and immutable log
-tail via Server-Sent Events. Operator controls are safe intents only: they copy
-the exact command or policy action to run, but they do not mutate live orders.
+watched markets, source reliability, calibration/CLV summary, pinned reference
+repo readiness, and immutable log tail via Server-Sent Events. Operator controls
+are safe intents only: they copy the exact command or policy action to run, but
+they do not mutate live orders.
+
+## Reference repo automation
+
+The automation manifest is in `configs/policy.yaml` under `automation.sources`.
+It pins four public repositories by commit and checks whether their local clones
+are present before downstream automation relies on them:
+
+```bash
+polyflow automation-sources --config configs/policy.yaml --root .
+```
+
+| Source | Automation role | Local path / env override |
+|---|---|---|
+| `github.com/warproxxx/poly_data` | Historical trade data for backtests and wallet replay | `external/poly_data` or `POLYFLOW_POLY_DATA_PATH` |
+| `github.com/Polymarket/polymarket-cli` | External market/order command surface | `external/polymarket-cli` or `POLYFLOW_POLYMARKET_CLI_PATH` |
+| `github.com/Polymarket/agents` | Public-source agent/RAG framework reference | `external/agents` or `POLYFLOW_POLYMARKET_AGENTS_PATH` |
+| `github.com/KaustubhPatange/polymarket-trade-engine` | 5-minute lifecycle, ticker, and simulation architecture reference | `external/polymarket-trade-engine` or `POLYFLOW_TRADE_ENGINE_PATH` |
+
+The `reference_repo_monitor` subagent runs hourly by default, persists readiness
+to SQLite, and writes an immutable audit record. Missing clones block source
+readiness, not the whole runtime; live orders still remain governed by the
+normal scanner, probability, Kelly, risk, formatter, hook, and logging gates.
 
 ## Learning status
 

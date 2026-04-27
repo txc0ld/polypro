@@ -95,6 +95,8 @@ class DashboardSnapshot:
             avg_clv = store.average_clv_bps()
             source_reliability = store.all_source_reliabilities()[:12]
             signal_counts = store.signal_counts_by_strategy()
+            automation_sources = store.list_automation_sources()
+            automation_ready = sum(1 for source in automation_sources if source.get("ok"))
 
             bankroll_at_risk = sum(float(p.get("max_loss") or 0.0) for p in open_positions)
             market_value = sum(float(p.get("market_value") or 0.0) for p in open_positions)
@@ -129,6 +131,8 @@ class DashboardSnapshot:
                     "average_signal_score": avg_score,
                     "average_clv_bps": avg_clv,
                     "calibration_buckets": len(calibration),
+                    "automation_sources_ready": automation_ready,
+                    "automation_sources_total": len(automation_sources),
                 },
                 "markets": {
                     "watching": watching[:20],
@@ -140,6 +144,7 @@ class DashboardSnapshot:
                 "signals": recent_signals,
                 "signal_counts": signal_counts,
                 "source_reliability": source_reliability,
+                "automation_sources": automation_sources,
                 "calibration": calibration,
                 "log_tail": _tail_log(self.log_path, 30),
                 "operator_intents": [
