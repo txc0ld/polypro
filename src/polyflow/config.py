@@ -50,6 +50,15 @@ class KellyParams(BaseModel):
     min_effective_edge: float = 0.03
     min_edge_after_uncertainty: float = 0.015
     max_model_uncertainty: float = 0.12
+    # Pure EV thresholds per the EV-harvester protocol. The strategies
+    # consume these *in addition to* min_effective_edge — both must pass.
+    # ``ev_min_early`` applies when the market is far from close;
+    # ``ev_min_near_expiry`` applies inside ``near_expiry_window_seconds``.
+    ev_min_early: float = 0.12
+    ev_min_near_expiry: float = 0.18
+    near_expiry_window_seconds: float = 15 * 60.0
+    # Intra-market arbitrage: lock at least this much per unit (post-fees).
+    arbitrage_min_lock_pct: float = 0.005
 
 
 class OrderRules(BaseModel):
