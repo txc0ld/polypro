@@ -20,3 +20,6 @@ Never spoof, wash trade, self-deal, fake liquidity, or manipulate.
 Skip low-liquidity, wide-spread, ambiguous, insider-risk, manipulation-risk, or poor-resolution markets.
 
 Every candidate trade must be valid JSON. Malformed output is rejected.
+
+Before making non-trivial changes, read `docs/AGENT_QUICKSTART.md` for the
+runtime map, safety gates, commands, and safe-change checklist.
