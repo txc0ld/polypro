@@ -147,6 +147,11 @@ def build_estimate(
     # is reasonable for those.
     resolution_risk_buffer_multiplier: float = 0.5,
     uncertainty_buffer_multiplier: float = 0.5,
+    # When True, the position is held to resolution — no exit-side trade,
+    # so half_spread and liquidity_exit_buffer are dropped. Threshold
+    # strategies (BTC / commodity / weather / Fed) hold to resolution;
+    # scalp strategies (momentum, spread capture) do not.
+    hold_to_resolution: bool = False,
     reason_codes: list[str] | None = None,
     evidence_refs: list[str] | None = None,
     ttl_minutes: int = 30,
@@ -161,12 +166,13 @@ def build_estimate(
         q_model=model_probability,
         p_executable=market_price,
         outcome=outcome,
-        half_spread_value=half_spread_value,
+        # Hold-to-resolution: no exit fill, so no exit-side spread/liquidity drag.
+        half_spread_value=0.0 if hold_to_resolution else half_spread_value,
         expected_slippage=expected_slippage,
         fee=fee,
         resolution_risk_buffer=resolution_risk * resolution_risk_buffer_multiplier,
         model_uncertainty_buffer=uncertainty * uncertainty_buffer_multiplier,
-        liquidity_exit_buffer=liquidity_exit_buffer,
+        liquidity_exit_buffer=0.0 if hold_to_resolution else liquidity_exit_buffer,
     )
 
     if outcome is Outcome.YES:

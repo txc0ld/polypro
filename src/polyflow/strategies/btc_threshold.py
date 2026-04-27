@@ -128,9 +128,17 @@ class BtcThresholdStrategy:
             if snapshot.seconds_to_resolution <= self.max_late_entry_seconds
             else 0.0
         )
+
+        # High-conviction setup: when |spot-strike|/strike implies a z-score
+        # well outside the noise band, drop the uncertainty floor toward
+        # raw feed/latency penalties. Without this, a clearly-resolved
+        # threshold market (e.g. spot $77.9k vs $74k strike) carries the
+        # same 3c uncertainty floor as a knife-edge market.
+        confident = abs(q_up - 0.5) > 0.40   # q < 0.10 or q > 0.90
+        uncertainty_floor = 0.005 if confident else 0.02
         uncertainty = max(
-            0.02,
-            min(0.25, feed_penalty + latency_penalty + late_penalty + 0.03),
+            uncertainty_floor,
+            min(0.25, feed_penalty + latency_penalty + late_penalty + (0.01 if confident else 0.03)),
         )
         if uncertainty > self.policy.kelly.max_model_uncertainty:
             return None
@@ -146,16 +154,16 @@ class BtcThresholdStrategy:
             resolution_risk=market.resolution_risk,
             half_spread_value=half_spread(market.best_bid, market.best_ask),
             fee_rate_bps=market.fee_rate_bps,
-            # Objective Chainlink-resolved markets get a much lower
-            # resolution-risk buffer than ambiguous-resolution markets.
-            # The 0.5x default eats 10c on a 0.20 prior — far too much
-            # for a market that resolves off a single oracle price.
             resolution_risk_buffer_multiplier=0.10,
             uncertainty_buffer_multiplier=0.25,
+            # Threshold markets are always held to resolution — no exit-side
+            # cost. Saves ~1c of buffer that was eating real edge.
+            hold_to_resolution=True,
             reason_codes=[
                 "BTC_THRESHOLD_PUBLIC_FEED",
                 f"GAP:{snapshot.btc_spot - snapshot.price_to_beat:.2f}",
                 f"SECONDS_TO_RESOLUTION:{snapshot.seconds_to_resolution:.0f}",
+                f"CONFIDENT" if confident else "BORDERLINE",
             ],
             evidence_refs=[
                 f"btc_threshold:{snapshot.source_name}:{snapshot.source_url}:{snapshot.fetched_at.isoformat()}"

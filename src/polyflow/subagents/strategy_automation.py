@@ -307,10 +307,44 @@ class StrategyAutomation:
             },
         )
 
-        return BtcThresholdStrategy(policy=self.runtime.policy).evaluate(
+        result = BtcThresholdStrategy(policy=self.runtime.policy).evaluate(
             market=market,
             snapshot=snapshot,
         )
+        # Log the edge breakdown either way — when result is None we want
+        # to see *why* (which buffer ate the edge); when it fires we want
+        # to see the math that approved it.
+        if result is None:
+            self.logger.log(
+                actor="btc_threshold",
+                action="refused",
+                market_id=market.id,
+                payload={
+                    "asset": parsed.asset,
+                    "best_bid": market.best_bid,
+                    "best_ask": market.best_ask,
+                    "spot_usd": feed_summary.median_price_usd,
+                    "price_to_beat": parsed.price_to_beat,
+                    "min_effective_edge": self.runtime.policy.kelly.min_effective_edge,
+                },
+            )
+        else:
+            est, _ = result
+            self.logger.log(
+                actor="btc_threshold",
+                action="emitted",
+                market_id=market.id,
+                payload={
+                    "asset": parsed.asset,
+                    "model_q": est.model_probability,
+                    "market_p": est.market_price,
+                    "edge_before": est.edge_before_costs,
+                    "edge_after": est.edge_after_costs,
+                    "outcome": est.outcome.value,
+                    "reason_codes": est.reason_codes,
+                },
+            )
+        return result
 
     async def _evaluate_commodity_threshold(
         self, market: Market, parsed, ttc: float
