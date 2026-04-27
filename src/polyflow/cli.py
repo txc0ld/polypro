@@ -14,7 +14,7 @@ from .automation_sources import check_sources
 from .config import Policy
 from .promotion import PromotionInputs, evaluate as evaluate_promotion
 from .replay import reconstruct_trade, summarize as summarize_log
-from .runtime import build_default_runtime, run_forever
+from .runtime import build_default_runtime, build_live_scanner_runtime, run_forever
 from .secrets import credentials_summary, load_credentials
 from .subagents.heartbeat import Heartbeat
 
@@ -29,10 +29,27 @@ def main() -> None:
 @click.option("--log", "log_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
 @click.option("--db", "db_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/polyflow.db", show_default=True)
 @click.option("--scan-seconds", type=int, default=300, show_default=True)
-def run(config_path: Path, log_path: Path, db_path: Path, scan_seconds: int) -> None:
-    """Run the runtime against the given policy. Stub adapters by default."""
+@click.option("--live-scanner/--stub-scanner", default=False, show_default=True)
+@click.option("--gamma-limit", type=int, default=200, show_default=True)
+def run(
+    config_path: Path,
+    log_path: Path,
+    db_path: Path,
+    scan_seconds: int,
+    live_scanner: bool,
+    gamma_limit: int,
+) -> None:
+    """Run the runtime. Live scanner uses public Polymarket reads only."""
     policy = Policy.from_yaml(config_path)
-    rt = build_default_runtime(policy, str(log_path), db_path=str(db_path))
+    if live_scanner:
+        rt = build_live_scanner_runtime(
+            policy,
+            str(log_path),
+            db_path=str(db_path),
+            gamma_limit=gamma_limit,
+        )
+    else:
+        rt = build_default_runtime(policy, str(log_path), db_path=str(db_path))
     rt.heartbeat = Heartbeat(log_path.parent / "heartbeat.json")
     asyncio.run(run_forever(rt, scan_seconds=scan_seconds))
 
@@ -40,10 +57,21 @@ def run(config_path: Path, log_path: Path, db_path: Path, scan_seconds: int) -> 
 @main.command("scan-once")
 @click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="configs/policy.yaml", show_default=True)
 @click.option("--log", "log_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/immutable.jsonl", show_default=True)
-def scan_once(config_path: Path, log_path: Path) -> None:
-    """Run a single scanner tick. Useful for inspection and CI."""
+@click.option("--db", "db_path", type=click.Path(dir_okay=False, path_type=Path), default="logs/polyflow.db", show_default=True)
+@click.option("--live/--stub", "live_scanner", default=False, show_default=True)
+@click.option("--gamma-limit", type=int, default=200, show_default=True)
+def scan_once(config_path: Path, log_path: Path, db_path: Path, live_scanner: bool, gamma_limit: int) -> None:
+    """Run a single scanner tick. --live pulls public Polymarket markets."""
     policy = Policy.from_yaml(config_path)
-    rt = build_default_runtime(policy, str(log_path))
+    if live_scanner:
+        rt = build_live_scanner_runtime(
+            policy,
+            str(log_path),
+            db_path=str(db_path),
+            gamma_limit=gamma_limit,
+        )
+    else:
+        rt = build_default_runtime(policy, str(log_path), db_path=str(db_path))
     approved = asyncio.run(rt.tick_scan())
     click.echo(json.dumps({"approved": approved, "watchlist_size": len(rt.watchlist)}, indent=2))
 

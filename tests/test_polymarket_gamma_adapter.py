@@ -66,7 +66,7 @@ class TestParse:
         assert m.id == "0xX"
         assert m.liquidity_usd == 0.0
         assert m.tick_size is None
-        assert m.fee_rate_bps is None
+        assert m.fee_rate_bps == 0.0
 
 
 @pytest.mark.asyncio

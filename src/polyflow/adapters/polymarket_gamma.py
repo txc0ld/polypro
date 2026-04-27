@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from ..types import Market
+from .polymarket_clob_read import PolymarketCLOBReadAdapter
 
 _GAMMA_BASE = "https://gamma-api.polymarket.com"
 
@@ -76,6 +77,17 @@ def parse_gamma_market(raw: dict[str, Any]) -> Market:
     yes_token = token_ids[0] if len(token_ids) > 0 else None
     no_token = token_ids[1] if len(token_ids) > 1 else None
 
+    outcome_prices = raw.get("outcomePrices") or []
+    if isinstance(outcome_prices, str):
+        import json
+
+        try:
+            outcome_prices = json.loads(outcome_prices)
+        except json.JSONDecodeError:
+            outcome_prices = []
+
+    yes_price = _safe_float(outcome_prices[0]) if len(outcome_prices) > 0 else None
+
     return Market(
         id=market_id,
         event_id=_safe_str(raw.get("eventId") or raw.get("event_id")),
@@ -83,17 +95,23 @@ def parse_gamma_market(raw: dict[str, Any]) -> Market:
         category=_safe_str(raw.get("category")),
         close_time=_parse_iso(raw.get("endDate") or raw.get("end_date")),
         resolution_rules=_safe_str(raw.get("description") or raw.get("resolutionSource")),
-        liquidity_usd=_safe_float(raw.get("liquidity") or raw.get("liquidityNum"), 0.0) or 0.0,
-        volume_24h_usd=_safe_float(raw.get("volume24hr") or raw.get("volume24Hr"), 0.0) or 0.0,
+        liquidity_usd=_safe_float(
+            raw.get("liquidityClob") or raw.get("liquidity") or raw.get("liquidityNum"),
+            0.0,
+        ) or 0.0,
+        volume_24h_usd=_safe_float(
+            raw.get("volume24hrClob") or raw.get("volume24hr") or raw.get("volume24Hr"),
+            0.0,
+        ) or 0.0,
         spread_pct=_safe_float(raw.get("spread"), 100.0) or 100.0,
         depth_within_5c_usd=_safe_float(raw.get("depth5c"), 0.0) or 0.0,
-        best_bid=_safe_float(raw.get("bestBid")),
-        best_ask=_safe_float(raw.get("bestAsk")),
+        best_bid=_safe_float(raw.get("bestBid")) or yes_price,
+        best_ask=_safe_float(raw.get("bestAsk")) or yes_price,
         yes_token_id=_safe_str(yes_token),
         no_token_id=_safe_str(no_token),
         tick_size=_safe_float(raw.get("orderPriceMinTickSize") or raw.get("tickSize")),
         min_order_size=_safe_float(raw.get("orderMinSize") or raw.get("minOrderSize")),
-        fee_rate_bps=_safe_float(raw.get("feeRateBps") or raw.get("makerFeeBps")),
+        fee_rate_bps=_safe_float(raw.get("feeRateBps") or raw.get("makerFeeBps"), 0.0),
         neg_risk=bool(raw.get("negRisk", False)),
         market_quality=0.0,  # filled in by the scanner
         resolution_risk=_safe_float(raw.get("resolutionRiskPrior"), 0.20) or 0.20,
@@ -109,10 +127,14 @@ class PolymarketGammaAdapter:
         base_url: str = _GAMMA_BASE,
         timeout_seconds: float = 10.0,
         client: httpx.AsyncClient | None = None,
+        enrich_order_books: bool = False,
+        max_order_book_enrich: int = 80,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
         self._client = client
+        self._enrich_order_books = enrich_order_books
+        self._max_order_book_enrich = max_order_book_enrich
 
     async def __aenter__(self) -> "PolymarketGammaAdapter":
         if self._client is None:
@@ -130,7 +152,13 @@ class PolymarketGammaAdapter:
         try:
             resp = await client.get(
                 f"{self._base_url}/markets",
-                params={"active": "true", "closed": "false", "limit": limit},
+                params={
+                    "active": "true",
+                    "closed": "false",
+                    "limit": limit,
+                    "order": "volume24hr",
+                    "ascending": "false",
+                },
             )
             resp.raise_for_status()
             data = resp.json()
@@ -146,6 +174,8 @@ class PolymarketGammaAdapter:
             except Exception:  # noqa: BLE001
                 # Defensive: a single malformed record never kills a scan tick.
                 continue
+        if self._enrich_order_books:
+            markets = await self._with_order_book_depth(markets)
         return markets
 
     async def get_market(self, market_id: str) -> Market | None:
@@ -156,7 +186,38 @@ class PolymarketGammaAdapter:
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
-            return parse_gamma_market(resp.json())
+            market = parse_gamma_market(resp.json())
+            if self._enrich_order_books:
+                enriched = await self._with_order_book_depth([market])
+                return enriched[0] if enriched else market
+            return market
         finally:
             if owns:
                 await client.aclose()
+
+    async def _with_order_book_depth(self, markets: list[Market]) -> list[Market]:
+        """Enrich Gamma markets with public CLOB book depth when token IDs exist."""
+        out: list[Market] = []
+        async with PolymarketCLOBReadAdapter(timeout_seconds=self._timeout) as clob:
+            for index, market in enumerate(markets):
+                if index >= self._max_order_book_enrich or not market.yes_token_id:
+                    out.append(market)
+                    continue
+                try:
+                    book = await clob.order_book(market.yes_token_id)
+                except Exception:  # noqa: BLE001
+                    out.append(market)
+                    continue
+                depth = book.depth_within(cents=0.05)
+                depth_usd = min(depth["bid"], depth["ask"])
+                out.append(
+                    market.model_copy(
+                        update={
+                            "best_bid": book.best_bid,
+                            "best_ask": book.best_ask,
+                            "spread_pct": book.spread_pct,
+                            "depth_within_5c_usd": depth_usd,
+                        }
+                    )
+                )
+        return out

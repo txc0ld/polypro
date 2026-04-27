@@ -14,6 +14,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from ..market_scanner import (
+    is_quickfire_candidate,
+    quickfire_reasons,
+    quickfire_score,
+    strategy_candidates,
+)
 from ..types import Market, Position, Signal
 
 
@@ -28,8 +34,16 @@ CREATE TABLE IF NOT EXISTS markets (
   liquidity_usd REAL,
   volume_24h_usd REAL,
   spread_pct REAL,
+  depth_within_5c_usd REAL,
+  best_bid REAL,
+  best_ask REAL,
+  neg_risk INTEGER,
   market_quality REAL,
   resolution_risk REAL,
+  strategy_candidates TEXT NOT NULL DEFAULT '[]',
+  quickfire_eligible INTEGER NOT NULL DEFAULT 0,
+  quickfire_reasons TEXT NOT NULL DEFAULT '[]',
+  quickfire_score REAL NOT NULL DEFAULT 0,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -167,6 +181,14 @@ class SQLiteStore:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._ensure_column("markets", "depth_within_5c_usd", "REAL")
+            self._ensure_column("markets", "best_bid", "REAL")
+            self._ensure_column("markets", "best_ask", "REAL")
+            self._ensure_column("markets", "neg_risk", "INTEGER")
+            self._ensure_column("markets", "strategy_candidates", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column("markets", "quickfire_eligible", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column("markets", "quickfire_reasons", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column("markets", "quickfire_score", "REAL NOT NULL DEFAULT 0")
             self._ensure_column("automation_sources", "warning_codes", "TEXT NOT NULL DEFAULT '[]'")
 
     @contextmanager
@@ -181,14 +203,20 @@ class SQLiteStore:
     # ---------- markets ----------
     def upsert_market(self, m: Market, *, status: str = "watching") -> None:
         close_time = m.close_time.isoformat() if m.close_time else None
+        strategies = json.dumps([s.value for s in strategy_candidates(m)])
+        quickfire = is_quickfire_candidate(m)
+        quickfire_skip = json.dumps(list(quickfire_reasons(m)))
+        qf_score = quickfire_score(m)
         with self._cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO markets (
                     id, event_id, question, category, close_time, resolution_rules,
-                    liquidity_usd, volume_24h_usd, spread_pct, market_quality,
-                    resolution_risk, status
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    liquidity_usd, volume_24h_usd, spread_pct, depth_within_5c_usd,
+                    best_bid, best_ask, neg_risk, market_quality, resolution_risk,
+                    strategy_candidates, quickfire_eligible, quickfire_reasons,
+                    quickfire_score, status
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     event_id=excluded.event_id,
                     question=excluded.question,
@@ -198,14 +226,24 @@ class SQLiteStore:
                     liquidity_usd=excluded.liquidity_usd,
                     volume_24h_usd=excluded.volume_24h_usd,
                     spread_pct=excluded.spread_pct,
+                    depth_within_5c_usd=excluded.depth_within_5c_usd,
+                    best_bid=excluded.best_bid,
+                    best_ask=excluded.best_ask,
+                    neg_risk=excluded.neg_risk,
                     market_quality=excluded.market_quality,
                     resolution_risk=excluded.resolution_risk,
+                    strategy_candidates=excluded.strategy_candidates,
+                    quickfire_eligible=excluded.quickfire_eligible,
+                    quickfire_reasons=excluded.quickfire_reasons,
+                    quickfire_score=excluded.quickfire_score,
                     status=excluded.status
                 """,
                 (
                     m.id, m.event_id, m.question, m.category, close_time, m.resolution_rules,
-                    m.liquidity_usd, m.volume_24h_usd, m.spread_pct, m.market_quality,
-                    m.resolution_risk, status,
+                    m.liquidity_usd, m.volume_24h_usd, m.spread_pct,
+                    m.depth_within_5c_usd, m.best_bid, m.best_ask,
+                    1 if m.neg_risk else 0, m.market_quality, m.resolution_risk,
+                    strategies, 1 if quickfire else 0, quickfire_skip, qf_score, status,
                 ),
             )
             for token_id, outcome in (
@@ -238,7 +276,21 @@ class SQLiteStore:
             rows = cur.execute(
                 "SELECT * FROM markets WHERE status = ? ORDER BY created_at DESC", (status,)
             ).fetchall()
-        return [dict(r) for r in rows]
+        out: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["strategy_candidates"] = json.loads(item.get("strategy_candidates") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                item["strategy_candidates"] = []
+            try:
+                item["quickfire_reasons"] = json.loads(item.get("quickfire_reasons") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                item["quickfire_reasons"] = []
+            item["quickfire_eligible"] = bool(item.get("quickfire_eligible"))
+            item["neg_risk"] = bool(item.get("neg_risk"))
+            out.append(item)
+        return out
 
     def set_market_status(self, market_id: str, status: str) -> None:
         with self._cursor() as cur:

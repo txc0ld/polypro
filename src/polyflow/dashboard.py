@@ -85,7 +85,11 @@ class DashboardSnapshot:
                 else None
             )
 
-            watching = store.get_markets_by_status("watching")
+            watching = [
+                market for market in store.get_markets_by_status("watching")
+                if market.get("quickfire_eligible", False)
+            ]
+            watching.sort(key=lambda market: float(market.get("quickfire_score") or 0.0), reverse=True)
             skipped = store.get_markets_by_status("skipped")
             resolved = store.get_markets_by_status("resolved")
             open_positions = store.get_open_positions()

@@ -13,10 +13,11 @@ import structlog
 
 from .adapters.clob import CLOBAdapter, PaperCLOBAdapter
 from .adapters.gamma import GammaAdapter, StubGammaAdapter
+from .adapters.polymarket_gamma import PolymarketGammaAdapter
 from .config import Policy
 from .incident import IncidentManager
 from .logger import ImmutableLogger
-from .market_scanner import classify, market_quality_score
+from .market_scanner import classify, market_quality_score, quickfire_score, strategy_candidates
 from .order_formatter import format_order
 from .persistence import SQLiteStore
 from .post_order_hook import evaluate_exposure
@@ -70,16 +71,31 @@ class Runtime:
                 action="classify",
                 market_id=m.id,
                 event_id=m.event_id,
-                input_obj={"market_id": m.id, "category": m.category},
+                input_obj={
+                    "market_id": m.id,
+                    "category": m.category,
+                    "question": m.question,
+                    "liquidity_usd": m.liquidity_usd,
+                    "volume_24h_usd": m.volume_24h_usd,
+                    "spread_pct": m.spread_pct,
+                    "depth_within_5c_usd": m.depth_within_5c_usd,
+                },
                 output_obj={
                     "approved": decision.approved,
                     "manual_only": decision.manual_only,
                     "reasons": list(decision.reasons),
+                    "strategy_candidates": [s.value for s in strategy_candidates(m)],
+                    "quickfire_eligible": decision.approved,
+                    "quickfire_score": quickfire_score(m),
                 },
                 payload={
                     "approved": decision.approved,
                     "manual_only": decision.manual_only,
                     "reasons": list(decision.reasons),
+                    "strategy_candidates": [s.value for s in strategy_candidates(m)],
+                    "market_quality": m.market_quality,
+                    "quickfire_eligible": decision.approved,
+                    "quickfire_score": quickfire_score(m),
                 },
             )
 
@@ -239,6 +255,27 @@ def build_default_runtime(policy: Policy, log_path: str, *, db_path: str | None 
     return Runtime(
         policy=policy,
         gamma=StubGammaAdapter(),
+        clob=PaperCLOBAdapter(),
+        logger=ImmutableLogger(log_path, code_version="dev", config_hash=policy.config_hash),
+        state=RiskState(bankroll_usdc=policy.risk.bankroll_usdc),
+        store=SQLiteStore(db_path) if db_path else None,
+    )
+
+
+def build_live_scanner_runtime(
+    policy: Policy,
+    log_path: str,
+    *,
+    db_path: str | None = None,
+    gamma_limit: int = 200,
+) -> Runtime:
+    """Build a read-only live scanner runtime using public Polymarket feeds."""
+    return Runtime(
+        policy=policy,
+        gamma=PolymarketGammaAdapter(
+            enrich_order_books=True,
+            max_order_book_enrich=gamma_limit,
+        ),
         clob=PaperCLOBAdapter(),
         logger=ImmutableLogger(log_path, code_version="dev", config_hash=policy.config_hash),
         state=RiskState(bankroll_usdc=policy.risk.bankroll_usdc),

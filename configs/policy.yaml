@@ -6,6 +6,7 @@ market_filters:
   max_spread_pct: 5
   min_depth_within_5c_usd: 10000
   min_time_to_close_minutes: 60
+  max_time_to_close_minutes: 2160
 
 risk:
   bankroll_usdc: 1000

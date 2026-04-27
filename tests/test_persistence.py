@@ -17,7 +17,7 @@ def _market() -> Market:
         close_time=datetime.now(timezone.utc) + timedelta(hours=12),
         resolution_rules="rules",
         liquidity_usd=200_000,
-        volume_24h_usd=50_000,
+        volume_24h_usd=150_000,
         spread_pct=2.0,
         depth_within_5c_usd=20_000,
         yes_token_id="t-yes",
@@ -37,6 +37,11 @@ class TestMarkets:
         store.upsert_market(_market(), status="approved")
         rows = store.get_markets_by_status("approved")
         assert len(rows) == 1 and rows[0]["id"] == "m1"
+        assert "external_odds_divergence" in rows[0]["strategy_candidates"]
+        assert rows[0]["quickfire_eligible"] is True
+        assert rows[0]["quickfire_reasons"] == []
+        assert rows[0]["quickfire_score"] > 0.0
+        assert rows[0]["depth_within_5c_usd"] == 20_000
 
     def test_upsert_is_idempotent(self) -> None:
         store = SQLiteStore(":memory:")

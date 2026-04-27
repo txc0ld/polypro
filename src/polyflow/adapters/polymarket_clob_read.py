@@ -73,9 +73,8 @@ def _parse_book(raw: dict[str, Any], token_id: str) -> OrderBook:
 
     return OrderBook(
         token_id=token_id,
-        # CLOB returns asks ascending and bids descending — preserve that.
-        bids=_levels(raw.get("bids", [])),
-        asks=_levels(raw.get("asks", [])),
+        bids=sorted(_levels(raw.get("bids", [])), key=lambda lvl: lvl.price, reverse=True),
+        asks=sorted(_levels(raw.get("asks", [])), key=lambda lvl: lvl.price),
     )
 
 

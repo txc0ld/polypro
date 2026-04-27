@@ -98,7 +98,7 @@ INDEX_HTML = """<!doctype html>
           <div><span>market value</span><b id="metric-market-value">$0</b><i data-spark="value"></i></div>
           <div><span>automation</span><b id="metric-automation">0/0</b><i data-bars="automation"></i></div>
           <div><span>position size</span><b id="metric-positions">0</b><i data-leds="positions"></i></div>
-          <div><span>pnl proxy</span><b id="metric-pnl">+$0</b><i data-bars="pnl"></i></div>
+          <div><span>clv signal</span><b id="metric-pnl">0 bps</b><i data-bars="pnl"></i></div>
         </div>
 
         <div class="execution-chart-wrap">
@@ -569,44 +569,32 @@ DASHBOARD_JS = r"""
   const moneyFmt = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let fallbackTimer = null;
+  let pollTimer = null;
   let frameId = null;
   let snapshot = {};
   let transportLabel = "FETCH";
   let chartSeries = [];
+  let lastChartSnapshot = "";
   let pulse = 0;
 
-  const fallbackMarkets = [
-    ["BTC closes above $120k by EOY", "CRYPTO", 17, 0.92, 0.28, 0.42],
-    ["Fed cuts 25bps at next FOMC", "MACRO", 22, 0.52, 0.53, 0.58],
-    ["NYC mayor primary winner", "POLITICS", 39, 0.72, 0.36, 0.24],
-    ["ETH/BTC > 0.06 by Aug 30", "CRYPTO", 43, 0.64, 0.70, 0.46],
-    ["NVDA earnings beat top line", "EQUITIES", 81, 0.82, 0.82, 0.55],
-    ["OPEC+ cuts output in Q3", "ENERGY", 68, 0.44, 0.52, 0.24],
-    ["Lakers reach Western Conf finals", "SPORTS", 72, 0.46, 0.47, 0.80],
-    ["GPT-6 announced before Sept", "AI", 10, 0.56, 0.72, 0.74],
-    ["Tesla deliveries > 480k Q3", "EQUITIES", 44, 0.50, 0.22, 0.34],
-    ["Senate flips on tax bill", "POLITICS", 55, 0.58, 0.87, 0.36]
-  ];
-
-  function n(v, fallback = 0) {
+  function n(v, defaultValue = 0) {
     const out = Number(v);
-    return Number.isFinite(out) ? out : fallback;
+    return Number.isFinite(out) ? out : defaultValue;
   }
 
   function money(v) {
     return moneyFmt.format(n(v));
   }
 
-  function text(v, fallback = "n/a") {
-    return v === null || v === undefined || v === "" ? fallback : String(v);
+  function text(v, defaultValue = "n/a") {
+    return v === null || v === undefined || v === "" ? defaultValue : String(v);
   }
 
-  function field(obj, names, fallback = "") {
+  function field(obj, names, defaultValue = "") {
     for (const name of names) {
       if (obj && obj[name] !== undefined && obj[name] !== null && obj[name] !== "") return obj[name];
     }
-    return fallback;
+    return defaultValue;
   }
 
   function compactTime(v) {
@@ -652,9 +640,9 @@ DASHBOARD_JS = r"""
     for (const market of markets.slice(0, 10)) {
       rows.push([
         field(market, ["question", "market_id", "id"], "watching market"),
-        field(market, ["category"], "MARKET"),
-        Math.round(n(field(market, ["market_quality"], 0.5)) * 100),
-        Math.max(.35, n(field(market, ["liquidity_usd"], 0)) / 250000),
+        `QUICK ${strategyLabel(field(market, ["strategy_candidates"], []), field(market, ["category"], "MARKET"))}`,
+        Math.round(n(field(market, ["quickfire_score", "market_quality"], 0)) * 100),
+        Math.max(.28, n(field(market, ["liquidity_usd"], 0)) / 250000),
         0.18 + (rows.length % 4) * .2,
         0.25 + (rows.length % 3) * .22
       ]);
@@ -663,13 +651,26 @@ DASHBOARD_JS = r"""
       rows.push([
         field(sig, ["market_id"], "signal"),
         field(sig, ["strategy"], "SIGNAL"),
-        Math.round(n(field(sig, ["score"], 50))),
-        Math.max(.28, n(field(sig, ["score"], 50)) / 100),
+        Math.round(n(field(sig, ["score"], 0))),
+        Math.max(.28, n(field(sig, ["score"], 0)) / 100),
         0.18 + (rows.length % 4) * .2,
         0.25 + (rows.length % 3) * .22
       ]);
     }
-    return rows.length ? rows : fallbackMarkets;
+    return rows;
+  }
+
+  function strategyLabel(value, category) {
+    if (Array.isArray(value) && value.length) return String(value[0]).toUpperCase();
+    if (typeof value === "string" && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed) && parsed.length) return String(parsed[0]).toUpperCase();
+      } catch (_err) {
+        return value.toUpperCase();
+      }
+    }
+    return String(category || "MARKET").toUpperCase();
   }
 
   function drawMarketFlow() {
@@ -688,6 +689,10 @@ DASHBOARD_JS = r"""
       [0.34, 0.74], [0.70, 0.76]
     ];
     const rows = derivedMarkets().slice(0, compact ? compactPositions.length : 10);
+    if (!rows.length) {
+      drawEmptyCanvasMessage(ctx, w, h, "NO LIVE MARKETS OR SIGNALS", "scanner data will appear after runtime ticks");
+      return;
+    }
     const nodes = rows.map((row, i) => {
       const jitter = Math.sin(pulse / 40 + i) * 8;
       const px = compact ? compactPositions[i][0] : row[4];
@@ -772,28 +777,18 @@ DASHBOARD_JS = r"""
     const pad = { l: 54, r: 18, t: 26, b: 42 };
     const plotW = w - pad.l - pad.r;
     const plotH = h - pad.t - pad.b;
-    const summary = snapshot.summary || {};
-    const target = Math.max(
-      2000,
-      n(summary.total_records) * 600 +
-      n(summary.open_orders) * 1800 +
-      n(summary.open_positions) * 2400 +
-      n(summary.automation_sources_ready) * 900
-    );
-    if (!chartSeries.length) {
-      chartSeries = Array.from({ length: 72 }, (_, i) => 1800 + Math.pow(i / 72, 1.8) * target * .8 + Math.sin(i / 3) * 420);
+    if (chartSeries.length < 2) {
+      drawEmptyCanvasMessage(ctx, w, h, "AWAITING LIVE EXECUTION FLOW", "chart starts after two runtime snapshots");
+      return;
     }
-    const last = chartSeries[chartSeries.length - 1] || 2000;
-    const next = last * .985 + target * .015 + Math.sin(pulse / 18) * 85;
-    if (!reduceMotion || pulse % 12 === 0) chartSeries.push(Math.max(1200, next));
-    if (chartSeries.length > 96) chartSeries.shift();
 
-    const max = Math.max(10000, ...chartSeries) * 1.12;
+    const max = Math.max(1, ...chartSeries) * 1.18;
     ctx.save();
     ctx.strokeStyle = "rgba(255, 184, 77, .28)";
     ctx.fillStyle = "rgba(255, 184, 77, .55)";
     ctx.font = "700 10px Fira Code, monospace";
-    for (const val of [2000, 5000, 10000, 20000, 50000, 100000]) {
+    const ticks = buildTicks(max);
+    for (const val of ticks) {
       const y = pad.t + plotH - (val / max) * plotH;
       if (y < pad.t || y > pad.t + plotH) continue;
       ctx.globalAlpha = .55;
@@ -802,7 +797,7 @@ DASHBOARD_JS = r"""
       ctx.lineTo(w - pad.r, y);
       ctx.stroke();
       ctx.globalAlpha = 1;
-      ctx.fillText(val >= 1000 ? `${Math.round(val / 1000)}k` : String(val), 8, y + 4);
+      ctx.fillText(String(Math.round(val)), 8, y + 4);
     }
 
     const pts = chartSeries.map((v, i) => [
@@ -840,15 +835,32 @@ DASHBOARD_JS = r"""
     ctx.strokeRect(marker[0] - 56, marker[1] - 44, 128, 34);
     ctx.fillStyle = "#ffb84d";
     ctx.font = "800 10px Fira Code, monospace";
-    ctx.fillText("PANEL SCAN", marker[0] - 46, marker[1] - 30);
+    ctx.fillText("LIVE SNAPSHOT", marker[0] - 46, marker[1] - 30);
     ctx.fillStyle = "#9f6d52";
-    ctx.fillText(`throughput ${Math.round(target / 120)}/s`, marker[0] - 46, marker[1] - 16);
+    ctx.fillText(`score ${Math.round(chartSeries[idx])}`, marker[0] - 46, marker[1] - 16);
 
     ctx.fillStyle = "rgba(255, 217, 171, .48)";
     ctx.font = "700 10px Fira Code, monospace";
     for (let i = 1; i <= 8; i += 1) {
       ctx.fillText(`M${i}`, pad.l + (i - 1) / 7 * plotW, h - 16);
     }
+    ctx.restore();
+  }
+
+  function buildTicks(max) {
+    const step = Math.max(1, Math.ceil(max / 4));
+    return [step, step * 2, step * 3, step * 4].filter((v) => v <= max);
+  }
+
+  function drawEmptyCanvasMessage(ctx, w, h, title, detail) {
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 184, 77, .82)";
+    ctx.font = "900 13px Fira Code, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(title, w / 2, h / 2 - 10);
+    ctx.fillStyle = "rgba(255, 217, 171, .48)";
+    ctx.font = "700 11px Fira Code, monospace";
+    ctx.fillText(detail, w / 2, h / 2 + 12);
     ctx.restore();
   }
 
@@ -907,7 +919,7 @@ DASHBOARD_JS = r"""
     setText("metric-market-value", money(s.market_value));
     setText("metric-automation", `${ready}/${total}`);
     setText("metric-positions", n(s.open_positions, positions.length));
-    setText("metric-pnl", `${n(s.average_clv_bps) >= 0 ? "+" : ""}${money(Math.abs(n(s.average_clv_bps)) * 12)}`);
+    setText("metric-pnl", `${n(s.average_clv_bps).toFixed(1)} bps`);
     setText("metric-orders", n(s.open_orders));
     setText("scanner-subtitle", `${n(s.watching_markets)} markets / ${signals.length} signals / cross-market diff`);
     setText("execution-subtitle", `${n(s.total_records)} audit records / ${n(s.placed_orders)} placed / ${n(s.rejected_orders)} rejected`);
@@ -923,7 +935,7 @@ DASHBOARD_JS = r"""
   }
 
   function updateInlineMicrocharts(s) {
-    const score = Math.max(3, Math.min(100, n(s.average_signal_score)));
+    const score = Math.max(0, Math.min(100, n(s.average_signal_score)));
     const scoreNode = document.querySelector("[data-bar='score']");
     if (scoreNode) {
       scoreNode.style.backgroundImage = `linear-gradient(90deg, #ff6f35 ${score}%, rgba(255,111,53,.14) ${score}%)`;
@@ -942,28 +954,34 @@ DASHBOARD_JS = r"""
     }
     const ledNode = document.querySelector("[data-leds='positions']");
     if (ledNode) {
-      ledNode.style.backgroundImage = "repeating-linear-gradient(90deg, #ff6f35 0 5px, rgba(255,111,53,.15) 5px 10px)";
+      const positions = n(s.open_positions);
+      ledNode.style.backgroundImage = positions
+        ? "repeating-linear-gradient(90deg, #ff6f35 0 5px, rgba(255,111,53,.15) 5px 10px)"
+        : "linear-gradient(90deg, rgba(255,111,53,.12), rgba(255,111,53,.12))";
     }
     const pnlNode = document.querySelector("[data-bars='pnl']");
     if (pnlNode) {
-      pnlNode.style.backgroundImage = "repeating-linear-gradient(90deg, rgba(255,111,53,.2) 0 12px, transparent 12px 18px), linear-gradient(90deg, transparent, #92e071)";
+      const clv = Math.min(100, Math.abs(n(s.average_clv_bps)));
+      pnlNode.style.backgroundImage = `linear-gradient(90deg, rgba(146,224,113,.55) ${clv}%, rgba(255,111,53,.12) ${clv}%)`;
     }
   }
 
   function renderProcesses() {
     const sources = Array.isArray(snapshot.automation_sources) ? snapshot.automation_sources : [];
     const s = snapshot.summary || {};
+    const sourceReady = n(s.automation_sources_ready);
+    const sourceTotal = Math.max(1, n(s.automation_sources_total));
     const rows = [
-      ["ingest gateway", 98],
-      ["ws normalizer", snapshot.heartbeat && snapshot.heartbeat.fresh ? 84 : 38],
-      ["orderbook cache", sources.length ? 92 : 55],
-      ["asym detector", Math.min(99, 61 + n(s.automation_sources_ready) * 7)],
-      ["ladder checker", Math.min(95, 46 + n(s.average_signal_score) / 2)],
-      ["x-market diff", Math.min(96, 52 + n(s.watching_markets) * 4)]
+      ["sse stream", transportLabel === "SSE" ? 100 : 0],
+      ["heartbeat", snapshot.heartbeat && snapshot.heartbeat.fresh ? 100 : 0],
+      ["source pins", (sourceReady / sourceTotal) * 100],
+      ["watchlist", Math.min(100, n(s.watching_markets) * 10)],
+      ["signals", Math.min(100, (Array.isArray(snapshot.signals) ? snapshot.signals.length : 0) * 10)],
+      ["audit log", Math.min(100, n(s.total_records) * 10)]
     ];
     const list = $("process-list");
     clear(list);
-    setText("process-count", `${rows.length} lanes`);
+    setText("process-count", `${rows.length} live lanes`);
     for (const [label, pct] of rows) {
       const row = document.createElement("div");
       row.className = "process-row";
@@ -1014,34 +1032,131 @@ DASHBOARD_JS = r"""
   }
 
   function renderTape() {
-    const orders = Array.isArray(snapshot.orders) ? snapshot.orders : [];
-    const signals = Array.isArray(snapshot.signals) ? snapshot.signals : [];
-    const rows = orders.length ? orders : signals;
+    const rows = tradeTapeRows();
     const list = $("tape-list");
     clear(list);
     setText("tape-count", `${Math.min(12, rows.length)} rows`);
     if (!rows.length) {
-      for (const item of fallbackMarkets.slice(0, 7)) {
-        const row = document.createElement("div");
-        row.className = "tape-row";
-        row.append(cell("b", item[2] > 50 ? "BUY" : "SELL", item[2] > 50 ? "side-buy" : "side-sell"));
-        row.append(cell("span", item[0]));
-        row.append(cell("b", `${item[2]}c`));
-        row.append(cell("span", `$${Math.round(item[3] * 2300)}`));
-        list.appendChild(row);
-      }
+      const row = document.createElement("div");
+      row.className = "tape-row";
+      row.append(cell("b", "WAIT", "side-sig"));
+      row.append(cell("span", "awaiting live orders or signals"));
+      row.append(cell("b", "--"));
+      row.append(cell("span", "--"));
+      list.appendChild(row);
       return;
     }
     for (const r of rows.slice(0, 12)) {
-      const side = field(r, ["side"], n(field(r, ["score"], 0)) > 70 ? "BUY" : "SIG");
       const row = document.createElement("div");
       row.className = "tape-row";
-      row.append(cell("b", String(side).toUpperCase().slice(0, 4), String(side).toUpperCase().includes("BUY") ? "side-buy" : "side-sig"));
-      row.append(cell("span", field(r, ["market_id", "question", "strategy"], "market")));
-      row.append(cell("b", `${Math.round(n(field(r, ["price", "market_price", "score"], 0)))}${field(r, ["price"], null) ? "" : ""}`));
-      row.append(cell("span", field(r, ["size", "status"], "open")));
+      row.append(cell("b", r.kind, tapeTone(r.kind)));
+      row.append(cell("span", r.label));
+      row.append(cell("b", r.value));
+      row.append(cell("span", r.detail));
       list.appendChild(row);
     }
+  }
+
+  function tradeTapeRows() {
+    const rows = [];
+    const orders = Array.isArray(snapshot.orders) ? snapshot.orders : [];
+    const signals = Array.isArray(snapshot.signals) ? snapshot.signals : [];
+    const markets = snapshot.markets && Array.isArray(snapshot.markets.watching) ? snapshot.markets.watching : [];
+    const logs = Array.isArray(snapshot.log_tail) ? snapshot.log_tail : [];
+
+    for (const order of orders) {
+      const side = String(field(order, ["side"], "ORD")).toUpperCase().slice(0, 4);
+      rows.push({
+        ts: field(order, ["observed_at", "created_at", "ts"], ""),
+        kind: side || "ORD",
+        label: `${field(order, ["market_id"], "order")} ${field(order, ["token_id"], "")}`,
+        value: formatPrice(field(order, ["price"], "")),
+        detail: `${field(order, ["status"], "OPEN")} ${formatSize(field(order, ["size"], ""))}`.trim(),
+        rank: 3
+      });
+    }
+
+    for (const signal of signals) {
+      const side = String(field(signal, ["side"], "SIG")).toUpperCase().slice(0, 4);
+      rows.push({
+        ts: field(signal, ["created_at", "updated_at", "ts"], ""),
+        kind: side || "SIG",
+        label: `${field(signal, ["strategy"], "strategy")} ${field(signal, ["market_id"], "")}`.trim(),
+        value: formatPrice(field(signal, ["market_price"], "")),
+        detail: `${field(signal, ["status"], "signal")} score ${Math.round(n(field(signal, ["score"], 0)))}`.trim(),
+        rank: 2 + n(field(signal, ["score"], 0)) / 100
+      });
+    }
+
+    for (const market of markets) {
+      rows.push({
+        ts: field(snapshot, ["generated_at"], field(market, ["created_at", "close_time"], "")),
+        kind: "CAND",
+        label: field(market, ["question", "id"], "quickfire candidate"),
+        value: `${Math.round(n(field(market, ["quickfire_score"], 0)) * 100)}`,
+        detail: strategyLabel(field(market, ["strategy_candidates"], []), "strategy"),
+        rank: 1 + n(field(market, ["quickfire_score"], 0))
+      });
+    }
+
+    for (const log of logs) {
+      const actor = String(field(log, ["actor"], ""));
+      const action = String(field(log, ["action"], ""));
+      if (!isTradeTapeLog(actor, action)) continue;
+      const payload = field(log, ["payload"], {});
+      const strategies = strategyLabel(field(payload, ["strategy_candidates"], []), action);
+      const approved = field(payload, ["approved"], null);
+      if (actor === "market_scanner" && approved !== true) continue;
+      rows.push({
+        ts: field(log, ["ts"], ""),
+        kind: action.toUpperCase().slice(0, 4) || "LOG",
+        label: `${actor} ${field(log, ["market_id", "event_id"], "")}`.trim(),
+        value: "--",
+        detail: actor === "market_scanner" ? `${approved ? "approved" : "checked"} ${strategies}` : action,
+        rank: 0
+      });
+    }
+
+    rows.sort((a, b) => {
+      const timeDelta = Date.parse(b.ts || 0) - Date.parse(a.ts || 0);
+      if (timeDelta !== 0) return timeDelta;
+      return n(b.rank) - n(a.rank);
+    });
+    return rows;
+  }
+
+  function isTradeTapeLog(actor, action) {
+    const raw = `${actor} ${action}`.toLowerCase();
+    return (
+      (raw.includes("market_scanner") && raw.includes("classify")) ||
+      raw.includes("signal") ||
+      raw.includes("place_order") ||
+      raw.includes("format") ||
+      raw.includes("risk_governor") ||
+      raw.includes("clob")
+    );
+  }
+
+  function formatPrice(value) {
+    if (value === null || value === undefined || value === "") return "--";
+    const price = n(value, NaN);
+    if (!Number.isFinite(price)) return text(value, "--");
+    if (price > 0 && price <= 1) return `${Math.round(price * 100)}c`;
+    return price.toFixed(price % 1 ? 3 : 0);
+  }
+
+  function formatSize(value) {
+    if (value === null || value === undefined || value === "") return "";
+    const size = n(value, NaN);
+    if (!Number.isFinite(size)) return text(value, "");
+    return `x${size.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  }
+
+  function tapeTone(kind) {
+    const raw = String(kind).toUpperCase();
+    if (raw.includes("BUY")) return "side-buy";
+    if (raw.includes("SELL") || raw.includes("REJE") || raw.includes("FAIL")) return "side-sell";
+    return "side-sig";
   }
 
   function cell(tag, content, className) {
@@ -1061,11 +1176,28 @@ DASHBOARD_JS = r"""
   function render(data, transport) {
     snapshot = data || {};
     transportLabel = transport || transportLabel;
+    updateChartSeries();
     renderMetrics();
     renderProcesses();
     renderLogs();
     drawMarketFlow();
     drawExecutionFlow();
+  }
+
+  function updateChartSeries() {
+    const snapshotId = snapshot.generated_at || "";
+    if (!snapshotId || snapshotId === lastChartSnapshot) return;
+    lastChartSnapshot = snapshotId;
+    const s = snapshot.summary || {};
+    const value =
+      n(s.total_records) +
+      n(s.open_orders) * 4 +
+      n(s.open_positions) * 6 +
+      n(s.placed_orders) * 8 +
+      n(s.rejected_orders) * 3 +
+      n(s.kill_switch_events) * 10;
+    chartSeries.push(value);
+    if (chartSeries.length > 96) chartSeries.shift();
   }
 
   async function fetchSnapshot(transport) {
@@ -1074,17 +1206,17 @@ DASHBOARD_JS = r"""
     render(await res.json(), transport);
   }
 
-  function startFetchFallback() {
-    clearInterval(fallbackTimer);
+  function startFetchPolling() {
+    clearInterval(pollTimer);
     fetchSnapshot("FETCH").catch(() => setStatus("stream-status", "OFFLINE", "bad"));
-    fallbackTimer = setInterval(() => {
+    pollTimer = setInterval(() => {
       fetchSnapshot("FETCH").catch(() => setStatus("stream-status", "OFFLINE", "bad"));
     }, 2500);
   }
 
   function connectStream() {
     if (!("EventSource" in window)) {
-      startFetchFallback();
+      startFetchPolling();
       return;
     }
     const es = new EventSource("/api/stream");
@@ -1100,7 +1232,7 @@ DASHBOARD_JS = r"""
       es.close();
       setStatus("stream-status", "RECONNECT", "warn");
       setTimeout(connectStream, 3000);
-      startFetchFallback();
+      startFetchPolling();
     };
   }
 

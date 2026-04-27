@@ -9,12 +9,30 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .config import MarketFilters
-from .types import Market
+from .types import Market, Strategy
 
 # Categories the bot must refuse outright.
 FORBIDDEN_CATEGORIES: frozenset[str] = frozenset(
     {"war", "death", "terror", "assassination"}
 )
+FORBIDDEN_TEXT_TERMS: frozenset[str] = frozenset(
+    {
+        "war",
+        "ceasefire",
+        "invasion",
+        "invade",
+        "military strike",
+        "peace deal",
+        "regime fall",
+        "terror",
+        "assassination",
+    }
+)
+
+QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES = 36 * 60
+QUICKFIRE_MAX_SPREAD_PCT = 2.5
+QUICKFIRE_MIN_VOLUME_24H_USD = 100_000
+QUICKFIRE_MIN_LIQUIDITY_USD = 100_000
 
 
 @dataclass(frozen=True)
@@ -46,8 +64,11 @@ def hard_skip_reasons(m: Market, f: MarketFilters) -> tuple[str, ...]:
         reasons.append("SPREAD_TOO_WIDE")
     if m.depth_within_5c_usd < f.min_depth_within_5c_usd:
         reasons.append("DEPTH_TOO_THIN")
-    if _time_to_close_minutes(m.close_time) < f.min_time_to_close_minutes:
+    ttc_minutes = _time_to_close_minutes(m.close_time)
+    if ttc_minutes < f.min_time_to_close_minutes:
         reasons.append("CLOSES_TOO_SOON")
+    if f.max_time_to_close_minutes is not None and ttc_minutes > f.max_time_to_close_minutes:
+        reasons.append("CLOSES_TOO_LATE")
     if not m.yes_token_id or not m.no_token_id:
         reasons.append("MISSING_TOKEN_IDS")
     if m.tick_size is None:
@@ -60,7 +81,10 @@ def hard_skip_reasons(m: Market, f: MarketFilters) -> tuple[str, ...]:
         reasons.append("AMBIGUOUS_RESOLUTION")
 
     cat = (m.category or "").lower()
-    if any(bad in cat for bad in FORBIDDEN_CATEGORIES):
+    text = f"{m.question} {cat}".lower()
+    if any(bad in cat for bad in FORBIDDEN_CATEGORIES) or any(
+        bad in text for bad in FORBIDDEN_TEXT_TERMS
+    ):
         reasons.append("FORBIDDEN_CATEGORY")
 
     return tuple(reasons)
@@ -77,12 +101,7 @@ def market_quality_score(m: Market) -> float:
     volume = min(1.0, m.volume_24h_usd / 250_000.0)
     depth = min(1.0, m.depth_within_5c_usd / 50_000.0)
 
-    ttc_min = _time_to_close_minutes(m.close_time)
-    if ttc_min == float("inf"):
-        time_score = 0.5
-    else:
-        # peak around 6h–7d to close, drop off near both ends
-        time_score = max(0.0, min(1.0, ttc_min / (7 * 24 * 60)))
+    time_score = _daily_time_score(_time_to_close_minutes(m.close_time))
 
     clarity = 1.0 if m.resolution_rules else 0.0
     res_penalty = m.resolution_risk
@@ -99,6 +118,112 @@ def market_quality_score(m: Market) -> float:
     return max(0.0, min(1.0, raw))
 
 
+def _daily_time_score(ttc_min: float) -> float:
+    if ttc_min == float("inf"):
+        return 0.0
+    if ttc_min < 60:
+        return 0.0
+    if ttc_min <= 6 * 60:
+        return max(0.0, ttc_min / (6 * 60))
+    if ttc_min <= 24 * 60:
+        return 1.0
+    if ttc_min <= QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES:
+        return 0.75
+    return 0.25
+
+
+def quickfire_score(m: Market) -> float:
+    """Rank daily candidates by tradability and strategy coverage."""
+    liquidity = min(1.0, m.liquidity_usd / 500_000.0)
+    volume = min(1.0, m.volume_24h_usd / 500_000.0)
+    spread = max(0.0, 1.0 - (m.spread_pct / QUICKFIRE_MAX_SPREAD_PCT))
+    depth = min(1.0, m.depth_within_5c_usd / 75_000.0)
+    time_score = _daily_time_score(_time_to_close_minutes(m.close_time))
+    strategy_breadth = min(1.0, len(strategy_candidates(m)) / 4.0)
+    raw = (
+        0.20 * liquidity
+        + 0.25 * volume
+        + 0.20 * spread
+        + 0.15 * depth
+        + 0.10 * time_score
+        + 0.10 * strategy_breadth
+    )
+    return max(0.0, min(1.0, raw))
+
+
+def quickfire_reasons(m: Market) -> tuple[str, ...]:
+    """Return why a market is not a daily quick-turnover candidate."""
+    reasons: list[str] = []
+    ttc = _time_to_close_minutes(m.close_time)
+
+    if ttc == float("inf"):
+        reasons.append("NO_CLOSE_TIME")
+    elif ttc > QUICKFIRE_MAX_TIME_TO_CLOSE_MINUTES:
+        reasons.append("LONG_HORIZON")
+    if m.volume_24h_usd < QUICKFIRE_MIN_VOLUME_24H_USD:
+        reasons.append("LOW_INTRADAY_VOLUME")
+    if m.liquidity_usd < QUICKFIRE_MIN_LIQUIDITY_USD:
+        reasons.append("LOW_LIQUIDITY")
+    if m.spread_pct > QUICKFIRE_MAX_SPREAD_PCT:
+        reasons.append("SPREAD_NOT_QUICKFIRE")
+    if not strategy_candidates(m):
+        reasons.append("NO_STRATEGY_MATCH")
+
+    return tuple(reasons)
+
+
+def is_quickfire_candidate(m: Market) -> bool:
+    """True when the market is liquid enough and close enough for daily turnover."""
+    return not quickfire_reasons(m)
+
+
+def strategy_candidates(m: Market) -> tuple[Strategy, ...]:
+    """Return the tailored strategy families that may evaluate this market.
+
+    This is routing metadata, not a trade recommendation. A strategy still has
+    to produce a valid probability estimate, then pass Kelly/risk/order gates.
+    """
+    text = f"{m.question} {m.category or ''}".lower()
+    out: list[Strategy] = []
+
+    if m.neg_risk:
+        out.append(Strategy.NEGATIVE_RISK_BASKET)
+
+    crypto_terms = ("btc", "bitcoin", "eth", "ethereum", "solana", "crypto")
+    threshold_terms = ("above", "below", "over", "under", "reach", "hit", "close")
+    if any(term in text for term in crypto_terms) and any(term in text for term in threshold_terms):
+        out.append(Strategy.BTC_THRESHOLD)
+
+    anchor_categories = (
+        "sports", "nba", "nfl", "mlb", "nhl", "soccer", "election",
+        "politics", "crypto", "finance", "economics",
+    )
+    if any(term in text for term in anchor_categories):
+        out.append(Strategy.EXTERNAL_ODDS_DIVERGENCE)
+
+    news_categories = (
+        "politics", "election", "economics", "finance", "business", "crypto",
+        "weather", "technology", "tech", "ai", "geopolitics", "fed", "rates",
+    )
+    if any(term in text for term in news_categories):
+        out.append(Strategy.NEWS_REPRICING)
+
+    if (m.market_quality or market_quality_score(m)) >= 0.70 and m.liquidity_usd >= 100_000:
+        out.append(Strategy.FOUR_LAYER_ALIGNMENT)
+
+    if m.spread_pct <= 2.0 and m.depth_within_5c_usd >= 25_000:
+        out.append(Strategy.SPREAD_CAPTURE)
+
+    if m.depth_within_5c_usd >= 50_000 and m.liquidity_usd >= 250_000:
+        out.append(Strategy.PASSIVE_FAIR_VALUE_QUOTING)
+
+    deduped: list[Strategy] = []
+    for strategy in out:
+        if strategy not in deduped:
+            deduped.append(strategy)
+    return tuple(deduped)
+
+
 def classify(m: Market, f: MarketFilters) -> ScanDecision:
     """Classify a market: approved, manual_only, or skipped."""
     reasons = hard_skip_reasons(m, f)
@@ -109,6 +234,16 @@ def classify(m: Market, f: MarketFilters) -> ScanDecision:
     if quality < 0.70:
         return ScanDecision(
             m.id, approved=False, manual_only=True, reasons=("LOW_QUALITY_REVIEW",)
+        )
+
+    if not strategy_candidates(m):
+        return ScanDecision(
+            m.id, approved=False, manual_only=True, reasons=("NO_STRATEGY_MATCH",)
+        )
+
+    if f.max_time_to_close_minutes is not None and quickfire_score(m) < 0.50:
+        return ScanDecision(
+            m.id, approved=False, manual_only=True, reasons=("LOW_QUICKFIRE_SCORE",)
         )
 
     return ScanDecision(m.id, approved=True, manual_only=False, reasons=())
@@ -122,7 +257,19 @@ def scan(markets: list[Market], f: MarketFilters) -> dict[str, list[dict]]:
 
     for m in markets:
         d = classify(m, f)
-        entry = {"market_id": m.id, "question": m.question}
+        entry = {
+            "market_id": m.id,
+            "question": m.question,
+            "category": m.category,
+            "market_quality": m.market_quality or market_quality_score(m),
+            "liquidity_usd": m.liquidity_usd,
+            "volume_24h_usd": m.volume_24h_usd,
+            "spread_pct": m.spread_pct,
+            "strategies": [s.value for s in strategy_candidates(m)],
+            "quickfire_eligible": is_quickfire_candidate(m),
+            "quickfire_reasons": list(quickfire_reasons(m)),
+            "quickfire_score": quickfire_score(m),
+        }
         if d.approved:
             approved.append(entry)
         elif d.manual_only:

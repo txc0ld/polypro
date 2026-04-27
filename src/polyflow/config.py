@@ -18,6 +18,7 @@ class MarketFilters(BaseModel):
     max_spread_pct: float = 5.0
     min_depth_within_5c_usd: float = 10_000
     min_time_to_close_minutes: int = 60
+    max_time_to_close_minutes: int | None = None
 
 
 class RiskLimits(BaseModel):

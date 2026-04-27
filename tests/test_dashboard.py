@@ -53,7 +53,7 @@ def _market() -> Market:
         close_time=datetime.now(timezone.utc) + timedelta(hours=6),
         resolution_rules="Resolved by CI outcome.",
         liquidity_usd=100_000.0,
-        volume_24h_usd=25_000.0,
+        volume_24h_usd=125_000.0,
         spread_pct=1.5,
         yes_token_id="token-yes",
         no_token_id="token-no",

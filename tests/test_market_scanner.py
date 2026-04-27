@@ -7,8 +7,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from polyflow.config import MarketFilters
-from polyflow.market_scanner import classify, hard_skip_reasons, market_quality_score, scan
-from polyflow.types import Market
+from polyflow.market_scanner import (
+    classify,
+    hard_skip_reasons,
+    market_quality_score,
+    scan,
+    quickfire_score,
+    strategy_candidates,
+)
+from polyflow.types import Market, Strategy
 
 
 def make_market(**overrides) -> Market:
@@ -64,6 +71,13 @@ class TestHardFilters:
         )
         assert "CLOSES_TOO_SOON" in r
 
+    def test_close_too_late_for_daily_market_policy(self) -> None:
+        r = hard_skip_reasons(
+            make_market(close_time=datetime.now(timezone.utc) + timedelta(days=5)),
+            MarketFilters(max_time_to_close_minutes=36 * 60),
+        )
+        assert "CLOSES_TOO_LATE" in r
+
     def test_missing_token_ids(self) -> None:
         r = hard_skip_reasons(make_market(yes_token_id=None), MarketFilters())
         assert "MISSING_TOKEN_IDS" in r
@@ -79,6 +93,14 @@ class TestHardFilters:
     @pytest.mark.parametrize("cat", ["war", "death", "terror", "Assassination Watch"])
     def test_forbidden_categories(self, cat: str) -> None:
         r = hard_skip_reasons(make_market(category=cat), MarketFilters())
+        assert "FORBIDDEN_CATEGORY" in r
+
+    @pytest.mark.parametrize(
+        "question",
+        ["Will China invade Taiwan?", "Ceasefire by Friday?", "Permanent peace deal by May?"],
+    )
+    def test_forbidden_question_terms(self, question: str) -> None:
+        r = hard_skip_reasons(make_market(question=question, category=None), MarketFilters())
         assert "FORBIDDEN_CATEGORY" in r
 
 
@@ -120,3 +142,33 @@ class TestClassify:
         m = make_market(market_quality=0.50)
         d = classify(m, MarketFilters())
         assert d.manual_only and not d.approved
+
+class TestStrategyRouting:
+    def test_crypto_threshold_market_maps_to_btc_strategy(self) -> None:
+        routes = strategy_candidates(
+            make_market(question="Will Bitcoin close above $120k by Friday?", category="crypto")
+        )
+        assert Strategy.BTC_THRESHOLD in routes
+        assert Strategy.FOUR_LAYER_ALIGNMENT in routes
+
+    def test_scan_output_includes_tailored_strategy_metadata(self) -> None:
+        out = scan(
+            [
+                make_market(
+                    question="Will Bitcoin close above $120k by Friday?",
+                    category="crypto",
+                    volume_24h_usd=150_000,
+                )
+            ],
+            MarketFilters(),
+        )
+        approved = out["approved_markets"][0]
+        assert "btc_threshold" in approved["strategies"]
+        assert approved["quickfire_eligible"] is True
+        assert approved["quickfire_score"] > 0.0
+        assert approved["market_quality"] == 0.85
+
+    def test_quickfire_score_prefers_liquid_tight_daily_markets(self) -> None:
+        weak = make_market(volume_24h_usd=100_000, spread_pct=2.4, depth_within_5c_usd=10_000)
+        strong = make_market(volume_24h_usd=600_000, spread_pct=0.5, depth_within_5c_usd=80_000)
+        assert quickfire_score(strong) > quickfire_score(weak)
