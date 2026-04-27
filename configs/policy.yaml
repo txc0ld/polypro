@@ -75,7 +75,9 @@ subagents:
 automation:
   enabled: true
   allow_order_placement: true
-  max_markets_per_strategy_cycle: 12
+  # Cover the full FAST watchlist each cycle so a transient mispricing
+  # in one of the lower-ranked markets isn't missed.
+  max_markets_per_strategy_cycle: 30
   external_anchors_path: configs/external_anchors.json
   news_max_items_per_feed: 20
   news_rss_urls:
