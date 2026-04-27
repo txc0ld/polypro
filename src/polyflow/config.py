@@ -40,7 +40,10 @@ class RiskLimits(BaseModel):
     max_new_markets_per_hour: int = 4
     max_orders_per_minute: int = 10
     min_confidence: float = 0.75
-    min_market_quality: float = 0.70
+    # 0.30 matches the scanner's quality gate. Live BTC threshold markets
+    # score ~0.50 because Gamma rarely populates depth5c; the original
+    # 0.70 floor blocked every signal.
+    min_market_quality: float = 0.30
     max_resolution_risk: float = 0.35
     max_model_uncertainty: float = 0.12
 
