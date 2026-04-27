@@ -136,8 +136,8 @@ they do not mutate live orders.
 ## Reference repo automation
 
 The automation manifest is in `configs/policy.yaml` under `automation.sources`.
-It pins four public repositories by commit and checks whether their local clones
-are present before downstream automation relies on them:
+The same four repositories are tracked as pinned Git submodules under
+`external/`, so local automation and GitHub review resolve the same commits:
 
 ```bash
 polyflow automation-sources --config configs/policy.yaml --root .
@@ -151,9 +151,10 @@ polyflow automation-sources --config configs/policy.yaml --root .
 | `github.com/KaustubhPatange/polymarket-trade-engine` | 5-minute lifecycle, ticker, and simulation architecture reference | `external/polymarket-trade-engine` or `POLYFLOW_TRADE_ENGINE_PATH` |
 
 The `reference_repo_monitor` subagent runs hourly by default, persists readiness
-to SQLite, and writes an immutable audit record. Missing clones block source
-readiness, not the whole runtime; live orders still remain governed by the
-normal scanner, probability, Kelly, risk, formatter, hook, and logging gates.
+to SQLite, and writes an immutable audit record. Missing or drifted submodules
+block source readiness. Optional binaries such as `polymarket` are warnings,
+not live-trading permission. Live orders still remain governed by the normal
+scanner, probability, Kelly, risk, formatter, hook, and logging gates.
 
 ## Learning status
 

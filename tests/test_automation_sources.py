@@ -65,6 +65,29 @@ def test_materialized_source_can_be_ready_without_git_pin_requirement(tmp_path: 
     assert status.reason_codes == ()
 
 
+def test_missing_optional_command_warns_without_blocking_ready_source(tmp_path: Path) -> None:
+    source_dir = tmp_path / "external/polymarket-cli"
+    (source_dir / "src/commands").mkdir(parents=True)
+    (source_dir / "Cargo.toml").write_text("[package]\nname = \"polymarket\"\n", encoding="utf-8")
+    (source_dir / "src/commands/clob.rs").write_text("// fixture\n", encoding="utf-8")
+
+    source = ReferenceRepoConfig(
+        name="polymarket-cli",
+        repo_url="https://github.com/Polymarket/polymarket-cli",
+        purpose="CLI source",
+        integration_mode="external_cli_surface",
+        expected_path="external/polymarket-cli",
+        required_files=["Cargo.toml", "src/commands/clob.rs"],
+        commands=["definitely-not-installed-polymarket-fixture"],
+    )
+
+    status = check_source(source, root=tmp_path, require_pinned_commit=False)
+
+    assert status.ok is True
+    assert status.reason_codes == ()
+    assert status.warning_codes == ("COMMAND_NOT_FOUND:definitely-not-installed-polymarket-fixture",)
+
+
 def test_policy_yaml_wires_reference_sources() -> None:
     policy = Policy.from_yaml("configs/policy.yaml")
 

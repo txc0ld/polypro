@@ -313,10 +313,11 @@ LIVE_TINY -> LIVE_STANDARD:
 
 ## Reference Repo Automation
 
-POLYFLOW now treats the four external repos as pinned automation inputs rather
-than code to import directly. The `reference_repo_monitor` subagent checks
-local materialization, required files, optional command availability, and pinned
-commit drift, then persists results to SQLite for the operations dashboard.
+POLYFLOW now treats the four external repos as pinned Git submodule inputs
+rather than code to import directly. The `reference_repo_monitor` subagent
+checks local materialization, required files, optional command availability,
+and pinned commit drift, then persists results to SQLite for the operations
+dashboard.
 
 | Repo | Automation input | Readiness checks |
 |---|---|---|
@@ -327,7 +328,7 @@ commit drift, then persists results to SQLite for the operations dashboard.
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Upstream behavior changes after this audit | High | Pin commits in policy and emit `PIN_MISMATCH` until reviewed. |
+| Upstream behavior changes after this audit | High | Pin commits in policy and submodules; emit `PIN_MISMATCH` until reviewed. |
 | Local clone missing or stale | Medium | Dashboard and `polyflow automation-sources` surface `LOCAL_SOURCE_NOT_FOUND` or commit drift before automation consumes it. |
 | External CLI accidentally bypasses POLYFLOW gates | Medium | Treat CLI as an inspected command surface; live orders still pass POLYFLOW scanner, risk, formatter, hook, and immutable log gates. |
 

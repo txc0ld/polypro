@@ -960,10 +960,12 @@ DASHBOARD_JS = r"""
       appendLine(item, "Pinned", value(field(source, ["pinned_commit"], "")).slice(0, 12) || "n/a");
       appendLine(item, "Detected", value(field(source, ["detected_commit"], "")).slice(0, 12) || "n/a");
       const reasons = field(source, ["reason_codes"], []);
+      const warnings = field(source, ["warning_codes"], []);
+      const notes = Array.isArray(reasons) && reasons.length ? reasons : warnings;
       item.appendChild(textNode(
         "div",
         "row-meta mono",
-        Array.isArray(reasons) && reasons.length ? reasons.slice(0, 3).join(" | ") : "ready"
+        Array.isArray(notes) && notes.length ? notes.slice(0, 3).join(" | ") : "ready"
       ));
       list.appendChild(item);
     }

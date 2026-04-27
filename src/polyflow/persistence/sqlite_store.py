@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS automation_sources (
   detected_commit TEXT,
   status TEXT NOT NULL,
   reason_codes TEXT NOT NULL,
+  warning_codes TEXT NOT NULL DEFAULT '[]',
   required_files TEXT NOT NULL,
   commands TEXT NOT NULL,
   checked_at TEXT NOT NULL
@@ -166,6 +167,7 @@ class SQLiteStore:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._ensure_column("automation_sources", "warning_codes", "TEXT NOT NULL DEFAULT '[]'")
 
     @contextmanager
     def _cursor(self) -> Iterator[sqlite3.Cursor]:
@@ -522,8 +524,8 @@ class SQLiteStore:
                 INSERT INTO automation_sources (
                     name, repo_url, purpose, integration_mode, enabled,
                     pinned_commit, local_path, detected_commit, status,
-                    reason_codes, required_files, commands, checked_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    reason_codes, warning_codes, required_files, commands, checked_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(name) DO UPDATE SET
                     repo_url=excluded.repo_url,
                     purpose=excluded.purpose,
@@ -534,6 +536,7 @@ class SQLiteStore:
                     detected_commit=excluded.detected_commit,
                     status=excluded.status,
                     reason_codes=excluded.reason_codes,
+                    warning_codes=excluded.warning_codes,
                     required_files=excluded.required_files,
                     commands=excluded.commands,
                     checked_at=excluded.checked_at
@@ -549,6 +552,7 @@ class SQLiteStore:
                     status.get("detected_commit"),
                     status["status"],
                     json.dumps(status.get("reason_codes", [])),
+                    json.dumps(status.get("warning_codes", [])),
                     json.dumps(status.get("required_files", [])),
                     json.dumps(status.get("commands", [])),
                     status["checked_at"],
@@ -564,7 +568,7 @@ class SQLiteStore:
         for row in rows:
             item = dict(row)
             item["enabled"] = bool(item["enabled"])
-            for key in ("reason_codes", "required_files", "commands"):
+            for key in ("reason_codes", "warning_codes", "required_files", "commands"):
                 try:
                     item[key] = json.loads(item[key])
                 except (TypeError, json.JSONDecodeError):
@@ -572,6 +576,11 @@ class SQLiteStore:
             item["ok"] = item["status"] == "ready"
             out.append(item)
         return out
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if column not in {row["name"] for row in rows}:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def close(self) -> None:
         with self._lock:

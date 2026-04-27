@@ -29,6 +29,7 @@ class AutomationSourceStatus:
     detected_commit: str | None
     status: str
     reason_codes: tuple[str, ...]
+    warning_codes: tuple[str, ...]
     required_files: tuple[str, ...]
     commands: tuple[str, ...]
     checked_at: str
@@ -49,6 +50,7 @@ class AutomationSourceStatus:
             "detected_commit": self.detected_commit,
             "status": self.status,
             "reason_codes": list(self.reason_codes),
+            "warning_codes": list(self.warning_codes),
             "required_files": list(self.required_files),
             "commands": list(self.commands),
             "checked_at": self.checked_at,
@@ -128,6 +130,7 @@ def check_source(
 ) -> AutomationSourceStatus:
     checked_at = datetime.now(timezone.utc).isoformat()
     reason_codes: list[str] = []
+    warning_codes: list[str] = []
     local_path = _resolve_local_path(source, root=root)
     detected_commit: str | None = None
 
@@ -155,7 +158,7 @@ def check_source(
 
     for command in source.commands:
         if shutil.which(command) is None:
-            reason_codes.append(f"COMMAND_NOT_FOUND:{command}")
+            warning_codes.append(f"COMMAND_NOT_FOUND:{command}")
 
     status = "ready" if source.enabled and not reason_codes else "not_ready"
     return AutomationSourceStatus(
@@ -169,6 +172,7 @@ def check_source(
         detected_commit=detected_commit,
         status=status,
         reason_codes=tuple(reason_codes),
+        warning_codes=tuple(warning_codes),
         required_files=tuple(source.required_files),
         commands=tuple(source.commands),
         checked_at=checked_at,

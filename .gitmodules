@@ -1,0 +1,12 @@
+[submodule "external/poly_data"]
+	path = external/poly_data
+	url = https://github.com/warproxxx/poly_data
+[submodule "external/polymarket-cli"]
+	path = external/polymarket-cli
+	url = https://github.com/Polymarket/polymarket-cli
+[submodule "external/agents"]
+	path = external/agents
+	url = https://github.com/Polymarket/agents
+[submodule "external/polymarket-trade-engine"]
+	path = external/polymarket-trade-engine
+	url = https://github.com/KaustubhPatange/polymarket-trade-engine

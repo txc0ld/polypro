@@ -132,6 +132,7 @@ async def _seed_paths(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "detected_commit": "b7c1d1703d6a3d1dfaa5f49c9ef7b4b899775392",
                 "status": "ready",
                 "reason_codes": [],
+                "warning_codes": [],
                 "required_files": ["update_all.py"],
                 "commands": [],
                 "checked_at": datetime.now(timezone.utc).isoformat(),
