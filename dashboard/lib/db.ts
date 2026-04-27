@@ -22,8 +22,16 @@ export type MarketRow = {
   liquidity_usd: number | null;
   volume_24h_usd: number | null;
   spread_pct: number | null;
+  best_bid: number | null;
+  best_ask: number | null;
+  depth_within_5c_usd: number | null;
+  neg_risk: number | null;
   market_quality: number | null;
   resolution_risk: number | null;
+  strategy_candidates: string | null;
+  quickfire_eligible: number | null;
+  quickfire_reasons: string | null;
+  quickfire_score: number | null;
   status: string;
   created_at: string;
 };

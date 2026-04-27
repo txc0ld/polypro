@@ -2,12 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+}
+
 html,
 body {
-  background: #0b0d10;
-  color: #e7ecf2;
+  background: #000000;
+  color: #f4f4f5;
 }
 
 body {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-feature-settings:
+    "cv11" on,
+    "ss01" on,
+    "ss03" on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular figures for every digit unless explicitly overridden. */
+.num,
+table,
+td,
+th,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f1f23;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2d2d33;
+}
+
+/* Hairline border helper */
+.hairline {
+  border-color: rgba(255, 255, 255, 0.06);
 }
