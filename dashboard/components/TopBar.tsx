@@ -20,8 +20,8 @@ const STATE_TONE: Record<IncidentState, PillTone> = {
 const MODE_TONE: Record<string, PillTone> = {
   observe: "muted",
   paper: "info",
-  live_tiny: "good",
-  live_standard: "good",
+  live_tiny: "accent",
+  live_standard: "accent",
   lockdown: "bad",
 };
 
@@ -54,29 +54,24 @@ export function TopBar({ status }: { status: RuntimeStatus }) {
         : "bad";
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur">
       {/* Row 1 — brand, nav, runtime status pills */}
-      <div className="flex items-center justify-between gap-6 px-6 py-3.5">
+      <div className="flex items-center justify-between gap-6 px-6 py-3">
         <div className="flex items-center gap-8">
-          <Link
-            href="/"
-            className="group flex items-center gap-2.5"
-          >
-            {/* Logo glyph */}
-            <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-md bg-gradient-violet text-[10px] font-bold tracking-tight text-bg shadow-glow transition-transform group-hover:scale-105">
-              <span className="relative z-10">PF</span>
-              <span className="absolute inset-0 rounded-md bg-gradient-violet opacity-50 blur-md" />
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-sm bg-accent text-[10px] font-semibold tracking-tight text-bg">
+              P
             </span>
-            <span className="text-[13px] font-semibold tracking-[0.22em] gradient-text">
+            <span className="text-[12px] font-semibold tracking-[0.18em] text-ink">
               POLYFLOW
             </span>
           </Link>
-          <nav className="flex items-center gap-0.5 text-xs">
+          <nav className="flex items-center gap-1 text-xs">
             {TABS.map((t) => (
               <Link
                 key={t.href}
                 href={t.href}
-                className="rounded px-3 py-1.5 font-medium text-muted transition-colors hover:bg-accent/10 hover:text-accent-glow"
+                className="rounded px-2.5 py-1 font-medium text-muted transition-colors hover:bg-panel hover:text-ink"
               >
                 {t.label}
               </Link>
@@ -84,28 +79,36 @@ export function TopBar({ status }: { status: RuntimeStatus }) {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          <Pill tone={STATE_TONE[status.incident]} dot pulse={status.incident === "HEALTHY"}>
+          <Pill
+            tone={STATE_TONE[status.incident]}
+            dot
+            pulse={status.incident === "HEALTHY"}
+          >
             {status.incident}
           </Pill>
           <Pill tone={modeTone(status.mode)}>{status.mode ?? "no mode"}</Pill>
-          <Pill tone={heartbeatTone} dot pulse={status.heartbeat.status === "fresh"}>
+          <Pill
+            tone={heartbeatTone}
+            dot
+            pulse={status.heartbeat.status === "fresh"}
+          >
             {status.heartbeat.ts ? timeAgo(status.heartbeat.ts) : "no heartbeat"}
           </Pill>
         </div>
       </div>
 
-      {/* Shimmering accent line */}
-      <div className="h-px shimmer-bar" />
-
-      {/* Row 2 — at-a-glance numerics */}
-      <div className="grid grid-cols-2 gap-px border-t border-hairline bg-border/40 md:grid-cols-5">
+      {/* Row 2 — at-a-glance numerics. 5 columns, hairline-separated. */}
+      <div className="grid grid-cols-2 border-t border-border md:grid-cols-5">
         <Tile
           label="wallet"
           value={
-            wallet ? fmtUsd(wallet.totalUsd, 2) : status.walletAddress ? "—" : "no funder"
+            wallet
+              ? fmtUsd(wallet.totalUsd, 2)
+              : status.walletAddress
+                ? "—"
+                : "no funder"
           }
           hint={shortAddr(status.walletAddress)}
-          highlight
         />
         <Tile
           label="bankroll"
@@ -128,17 +131,13 @@ export function TopBar({ status }: { status: RuntimeStatus }) {
               {fmtUsd(pnl, 2)}
             </span>
           }
-          hint="realized · last 24h"
+          hint="last 24h · realized"
         />
-        <Tile
-          label="open orders"
-          value={status.openOrders}
-          hint="from log"
-        />
+        <Tile label="open orders" value={status.openOrders} hint="from log" />
         <Tile
           label="active markets"
           value={status.activeMarkets}
-          hint="status = watching"
+          hint="status · watching"
         />
       </div>
     </header>
@@ -149,38 +148,19 @@ function Tile({
   label,
   value,
   hint,
-  highlight = false,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: string;
-  highlight?: boolean;
 }) {
   return (
-    <div
-      className={
-        highlight
-          ? "relative bg-bg px-5 py-3.5 transition-colors hover:bg-accent/[0.04]"
-          : "bg-bg px-5 py-3.5 transition-colors hover:bg-accent/[0.04]"
-      }
-    >
-      {highlight ? (
-        <span className="absolute inset-y-0 left-0 w-px bg-gradient-violet" />
-      ) : null}
+    <div className="border-r border-border px-5 py-3 last:border-r-0 [&:nth-child(2n)]:border-r-0 md:[&:nth-child(2n)]:border-r md:[&:last-child]:border-r-0">
       <div className="text-caption uppercase tracking-wider text-subtle">
         {label}
       </div>
-      <div
-        className={
-          highlight
-            ? "tabular mt-1 text-lg font-semibold gradient-text"
-            : "tabular mt-1 text-base font-medium text-ink"
-        }
-      >
-        {value}
-      </div>
+      <div className="tabular mt-1 text-base font-medium text-ink">{value}</div>
       {hint ? (
-        <div className="mt-0.5 text-[11px] text-subtle">{hint}</div>
+        <div className="mt-0.5 text-[11px] text-faint">{hint}</div>
       ) : null}
     </div>
   );

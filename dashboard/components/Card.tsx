@@ -6,30 +6,21 @@ export function Card({
   children,
   className = "",
   padded = true,
-  glow = false,
 }: {
   title?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
   padded?: boolean;
-  glow?: boolean;
 }) {
   return (
     <section
-      className={`relative overflow-hidden rounded-lg border border-border/70 bg-panel/70 backdrop-blur-sm ${
-        glow ? "card-glow-strong" : "card-glow"
-      } ${className}`}
+      className={`overflow-hidden rounded-md border border-border bg-surface ${className}`}
     >
-      {/* top accent gradient line */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent"
-      />
       {title || action ? (
-        <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
+        <header className="flex items-center justify-between border-b border-border px-4 py-2.5">
           {title ? (
-            <h2 className="text-caption uppercase tracking-wider text-muted">
+            <h2 className="text-caption uppercase tracking-wider text-subtle">
               {title}
             </h2>
           ) : (
@@ -62,17 +53,15 @@ export function Stat({
         : tone === "bad"
           ? "text-bad"
           : tone === "accent"
-            ? "gradient-text"
+            ? "text-accent"
             : "text-ink";
   return (
     <div className="flex flex-col gap-1">
       <span className="text-caption uppercase tracking-wider text-subtle">
         {label}
       </span>
-      <span className={`tabular text-2xl font-semibold ${toneClass}`}>
-        {value}
-      </span>
-      {hint ? <span className="text-xs text-muted">{hint}</span> : null}
+      <span className={`tabular text-xl font-medium ${toneClass}`}>{value}</span>
+      {hint ? <span className="text-[11px] text-subtle">{hint}</span> : null}
     </div>
   );
 }
@@ -87,7 +76,7 @@ export function KeyRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-hairline py-1.5 last:border-0">
+    <div className="flex items-baseline justify-between gap-3 py-1">
       <span className="text-xs text-subtle">{k}</span>
       <span className={`text-xs ${mono ? "font-mono text-muted" : "text-ink"}`}>
         {v}
@@ -104,9 +93,9 @@ export function EmptyState({
   hint?: string;
 }) {
   return (
-    <div className="flex flex-col items-start gap-1 py-6 text-xs text-subtle">
-      <span className="uppercase tracking-wider">{title}</span>
-      {hint ? <span className="text-muted">{hint}</span> : null}
+    <div className="flex flex-col items-start gap-1 py-6 text-xs">
+      <span className="uppercase tracking-wider text-subtle">{title}</span>
+      {hint ? <span className="text-faint">{hint}</span> : null}
     </div>
   );
 }

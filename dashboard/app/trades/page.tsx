@@ -38,10 +38,10 @@ export default function TradeCourtIndex() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight gradient-text">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             Trade Court
           </h1>
-          <p className="text-sm text-subtle">
+          <p className="mt-1 text-xs text-subtle">
             Every signal becomes a chronological trade page
           </p>
         </div>
@@ -73,12 +73,12 @@ export default function TradeCourtIndex() {
               {signals.map((s) => (
                 <tr
                   key={s.id}
-                  className="border-t border-hairline transition-colors hover:bg-white/[0.02]"
+                  className="row-hover border-t border-border"
                 >
                   <td className="px-4 py-2">
                     <Link
                       href={`/trades/${encodeURIComponent(s.id)}`}
-                      className="font-mono text-ink hover:text-accent"
+                      className="font-mono text-ink hover:text-accent-soft"
                     >
                       {shortId(s.id, 10)}
                     </Link>
@@ -86,7 +86,7 @@ export default function TradeCourtIndex() {
                   <td className="px-4 py-2">
                     <Link
                       href={`/probability/${encodeURIComponent(s.market_id)}`}
-                      className="font-mono text-muted hover:text-accent"
+                      className="font-mono text-muted hover:text-accent-soft"
                     >
                       {shortId(s.market_id, 10)}
                     </Link>

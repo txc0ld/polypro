@@ -5,25 +5,25 @@ import type { ActiveSignal, SignalAction } from "@/lib/signals";
 import { fmtUsd, shortId, timeAgo } from "@/lib/format";
 
 const ACTION_LABEL: Record<SignalAction, { label: string; tone: string }> = {
-  FILLED: { label: "FILLED", tone: "text-accent" },
-  PLACED: { label: "PLACED", tone: "text-accent" },
+  FILLED: { label: "FILLED", tone: "text-good" },
+  PLACED: { label: "PLACED", tone: "text-good" },
   RISK_REJECTED: { label: "RISK", tone: "text-warn" },
   FORMATTER_REJECTED: { label: "FORMAT", tone: "text-warn" },
   INCIDENT_BLOCKED: { label: "BLOCKED", tone: "text-bad" },
   WATCH: { label: "WATCH", tone: "text-subtle" },
-  REJECT: { label: "REJECT", tone: "text-subtle" },
+  REJECT: { label: "REJECT", tone: "text-faint" },
   PENDING: { label: "PENDING", tone: "text-muted" },
 };
 
-const ROW_BG: Record<SignalAction, string> = {
-  FILLED: "bg-accent/[0.04]",
-  PLACED: "bg-accent/[0.03]",
-  RISK_REJECTED: "bg-warn/[0.03]",
-  FORMATTER_REJECTED: "bg-warn/[0.03]",
-  INCIDENT_BLOCKED: "bg-bad/[0.04]",
-  WATCH: "",
-  REJECT: "",
-  PENDING: "",
+const ROW_LEFT_BAR: Record<SignalAction, string> = {
+  FILLED: "border-l-2 border-good",
+  PLACED: "border-l-2 border-good",
+  RISK_REJECTED: "border-l-2 border-warn",
+  FORMATTER_REJECTED: "border-l-2 border-warn",
+  INCIDENT_BLOCKED: "border-l-2 border-bad",
+  WATCH: "border-l-2 border-transparent",
+  REJECT: "border-l-2 border-transparent",
+  PENDING: "border-l-2 border-transparent",
 };
 
 function fmtProb(p: number | null): string {
@@ -37,32 +37,28 @@ function fmtBps(bps: number | null): string {
   return `${sign}${bps}bp`;
 }
 
-export function ActiveSignalsTable({
-  signals,
-}: {
-  signals: ActiveSignal[];
-}) {
+export function ActiveSignalsTable({ signals }: { signals: ActiveSignal[] }) {
   if (signals.length === 0) {
     return (
       <EmptyState
         title="no signals in last 30 minutes"
-        hint="Strategies emit candidates each cycle. The runtime may still be warming up, or every signal scored below the action threshold."
+        hint="Strategies emit candidates each cycle. The runtime may be warming up, or every signal scored below the action threshold."
       />
     );
   }
   return (
-    <div className="overflow-hidden rounded">
+    <div className="overflow-hidden">
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-caption uppercase tracking-wider text-subtle">
-            <th className="px-3 pb-2 pt-1 text-left font-normal">strategy</th>
-            <th className="px-3 pb-2 pt-1 text-left font-normal">market</th>
-            <th className="px-3 pb-2 pt-1 text-right font-normal">model</th>
-            <th className="px-3 pb-2 pt-1 text-right font-normal">price</th>
-            <th className="px-3 pb-2 pt-1 text-right font-normal">edge</th>
-            <th className="px-3 pb-2 pt-1 text-right font-normal">size</th>
-            <th className="px-3 pb-2 pt-1 text-right font-normal">action</th>
-            <th className="px-3 pb-2 pt-1 text-right font-normal">age</th>
+          <tr className="text-caption uppercase tracking-wider text-faint">
+            <th className="px-3 pb-2 pt-2.5 text-left font-normal">strategy</th>
+            <th className="px-3 pb-2 pt-2.5 text-left font-normal">market</th>
+            <th className="px-3 pb-2 pt-2.5 text-right font-normal">model</th>
+            <th className="px-3 pb-2 pt-2.5 text-right font-normal">price</th>
+            <th className="px-3 pb-2 pt-2.5 text-right font-normal">edge</th>
+            <th className="px-3 pb-2 pt-2.5 text-right font-normal">size</th>
+            <th className="px-3 pb-2 pt-2.5 text-right font-normal">action</th>
+            <th className="px-3 pb-2 pt-2.5 text-right font-normal">age</th>
           </tr>
         </thead>
         <tbody>
@@ -75,7 +71,7 @@ export function ActiveSignalsTable({
             return (
               <tr
                 key={s.signalId}
-                className={`border-t border-hairline transition-colors hover:bg-white/[0.02] ${ROW_BG[s.action]}`}
+                className={`row-hover border-t border-border ${ROW_LEFT_BAR[s.action]}`}
               >
                 <td className="px-3 py-2 align-middle">
                   <StrategyBadge strategy={s.strategy} size="sm" />
@@ -83,13 +79,14 @@ export function ActiveSignalsTable({
                 <td className="px-3 py-2 align-middle">
                   <Link
                     href={`/probability/${encodeURIComponent(s.marketId)}`}
-                    className="block max-w-[26ch] truncate text-ink hover:text-accent"
+                    className="block max-w-[26ch] truncate text-ink hover:text-accent-soft"
                     title={s.marketQuestion ?? s.marketId}
                   >
                     {s.marketQuestion ?? shortId(s.marketId, 18)}
                   </Link>
-                  <span className="text-[10px] uppercase tracking-wider text-subtle">
-                    {s.side} {s.category ? "· " + s.category : ""}
+                  <span className="text-[10px] uppercase tracking-wider text-faint">
+                    {s.side}
+                    {s.category ? ` · ${s.category}` : ""}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right tabular text-ink">
@@ -98,7 +95,7 @@ export function ActiveSignalsTable({
                 <td className="px-3 py-2 text-right tabular text-muted">
                   {fmtProb(s.marketPrice)}
                   {gap !== null ? (
-                    <span className="ml-1 text-[10px] text-subtle">
+                    <span className="ml-1 text-[10px] text-faint">
                       Δ{(gap * 100).toFixed(1)}
                     </span>
                   ) : null}
@@ -120,7 +117,7 @@ export function ActiveSignalsTable({
                     {action.label}
                   </Link>
                 </td>
-                <td className="px-3 py-2 text-right text-subtle">
+                <td className="px-3 py-2 text-right text-faint">
                   {timeAgo(s.createdAt)}
                 </td>
               </tr>

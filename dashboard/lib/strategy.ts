@@ -26,60 +26,60 @@ type Palette = {
   border: string;
   /** Tailwind class fragment for text. */
   text: string;
-  /** Tailwind class fragment for tinted background (10% alpha-ish). */
+  /** Tailwind class fragment for tinted background (8% alpha). */
   tint: string;
 };
 
 const PALETTES: Record<string, Palette> = {
   external_odds_divergence: {
     solid: "#10b981",
-    border: "border-emerald/40",
+    border: "border-emerald/30",
     text: "text-emerald",
-    tint: "bg-emerald/10",
+    tint: "bg-emerald/[0.08]",
   },
   news_repricing: {
     solid: "#38bdf8",
-    border: "border-sky/40",
+    border: "border-sky/30",
     text: "text-sky",
-    tint: "bg-sky/10",
+    tint: "bg-sky/[0.08]",
   },
   btc_threshold: {
     solid: "#f59e0b",
-    border: "border-amber/40",
+    border: "border-amber/30",
     text: "text-amber",
-    tint: "bg-amber/10",
+    tint: "bg-amber/[0.08]",
   },
   crypto_momentum: {
     solid: "#f97316",
-    border: "border-orange/40",
+    border: "border-orange/30",
     text: "text-orange",
-    tint: "bg-orange/10",
+    tint: "bg-orange/[0.08]",
   },
   four_layer_alignment: {
     solid: "#a78bfa",
-    border: "border-violet/40",
+    border: "border-violet/30",
     text: "text-violet",
-    tint: "bg-violet/10",
+    tint: "bg-violet/[0.08]",
   },
   intra_market_arbitrage: {
     solid: "#e879f9",
-    border: "border-fuchsia/40",
+    border: "border-fuchsia/30",
     text: "text-fuchsia",
-    tint: "bg-fuchsia/10",
+    tint: "bg-fuchsia/[0.08]",
   },
   near_expiry_certainty: {
     solid: "#fb7185",
-    border: "border-rose/40",
+    border: "border-rose/30",
     text: "text-rose",
-    tint: "bg-rose/10",
+    tint: "bg-rose/[0.08]",
   },
 };
 
 const FALLBACK: Palette = {
-  solid: "#a1a1aa",
+  solid: "#71717a",
   border: "border-border",
   text: "text-muted",
-  tint: "bg-white/5",
+  tint: "bg-panel",
 };
 
 export function strategyPalette(key: StrategyKey | null | undefined): Palette {

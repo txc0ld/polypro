@@ -23,13 +23,11 @@ export type ProbabilityPoint = {
 export function ProbabilityChart({ data }: { data: ProbabilityPoint[] }) {
   if (data.length === 0) {
     return (
-      <div className="flex h-72 items-center justify-center rounded border border-hairline bg-surface text-xs text-subtle">
+      <div className="flex h-72 items-center justify-center rounded border border-border bg-panel text-xs text-subtle">
         no probability estimates yet
       </div>
     );
   }
-  // Recharts renders a stacked area for the band by feeding `lower` and
-  // `upper - lower` through a transparent base + accent-tinted area.
   const enriched = data.map((p) => ({
     ...p,
     bandBase: p.lower ?? 0,
@@ -43,28 +41,29 @@ export function ProbabilityChart({ data }: { data: ProbabilityPoint[] }) {
           data={enriched}
           margin={{ top: 10, right: 16, bottom: 4, left: 0 }}
         >
-          <CartesianGrid stroke="#141417" strokeDasharray="2 4" />
+          <CartesianGrid stroke="#1f1f23" strokeDasharray="2 4" />
           <XAxis
             dataKey="ts"
-            stroke="#71717a"
-            tick={{ fontSize: 10 }}
+            stroke="#52525b"
+            tick={{ fontSize: 10, fill: "#71717a" }}
             tickFormatter={(v: string) =>
               new Date(v).toISOString().slice(11, 16)
             }
           />
           <YAxis
-            stroke="#71717a"
-            tick={{ fontSize: 10 }}
+            stroke="#52525b"
+            tick={{ fontSize: 10, fill: "#71717a" }}
             domain={[0, 1]}
             tickFormatter={(v: number) => `${(v * 100).toFixed(0)}c`}
             width={40}
           />
           <Tooltip
             contentStyle={{
-              background: "#0e0e10",
+              background: "#0c0c0f",
               border: "1px solid #1f1f23",
               fontSize: 11,
               borderRadius: 6,
+              color: "#fafafa",
             }}
             labelFormatter={(v: string) =>
               new Date(v).toISOString().replace("T", " ").slice(0, 19)
@@ -75,7 +74,7 @@ export function ProbabilityChart({ data }: { data: ProbabilityPoint[] }) {
             ]}
           />
           <Legend
-            wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+            wrapperStyle={{ fontSize: 10, paddingTop: 4, color: "#a1a1aa" }}
             iconType="line"
           />
           <Area
@@ -92,8 +91,8 @@ export function ProbabilityChart({ data }: { data: ProbabilityPoint[] }) {
             dataKey="bandRange"
             stackId="band"
             stroke="none"
-            fill="#6ee7b7"
-            fillOpacity={0.08}
+            fill="#8b5cf6"
+            fillOpacity={0.1}
             legendType="none"
             isAnimationActive={false}
           />
@@ -101,7 +100,7 @@ export function ProbabilityChart({ data }: { data: ProbabilityPoint[] }) {
             type="monotone"
             dataKey="modelProbability"
             name="model"
-            stroke="#6ee7b7"
+            stroke="#8b5cf6"
             dot={false}
             strokeWidth={1.75}
             isAnimationActive={false}
@@ -110,7 +109,7 @@ export function ProbabilityChart({ data }: { data: ProbabilityPoint[] }) {
             type="monotone"
             dataKey="marketPrice"
             name="market"
-            stroke="#f59e0b"
+            stroke="#a1a1aa"
             dot={false}
             strokeWidth={1.5}
             strokeDasharray="4 3"

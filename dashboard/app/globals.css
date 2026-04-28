@@ -8,12 +8,11 @@
 
 html,
 body {
-  background: #050007;
-  color: #f4f0ff;
+  background: #09090b;
+  color: #fafafa;
   min-height: 100%;
 }
 
-/* Layered background: deep black + violet radial glow + faint dotted grid */
 body {
   font-family:
     Inter,
@@ -24,29 +23,12 @@ body {
     Helvetica,
     Arial,
     sans-serif;
-  font-feature-settings:
-    "cv11" on,
-    "ss01" on,
-    "ss03" on;
+  font-feature-settings: "cv11" on, "ss01" on;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background:
-    radial-gradient(
-      ellipse 80% 50% at 50% -10%,
-      rgba(168, 85, 247, 0.18) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      ellipse 60% 40% at 100% 100%,
-      rgba(217, 70, 239, 0.08) 0%,
-      transparent 60%
-    ),
-    radial-gradient(circle at 1px 1px, rgba(168, 85, 247, 0.06) 1px, transparent 0)
-      0 0 / 32px 32px,
-    #050007;
-  background-attachment: fixed;
 }
 
+/* Tabular numerics for every number on the page. */
 .num,
 table,
 td,
@@ -55,73 +37,32 @@ th,
   font-variant-numeric: tabular-nums;
 }
 
-/* Violet-tinted scrollbar */
+/* Quiet zinc scrollbar. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.22);
-  border-radius: 4px;
+  background: rgba(82, 82, 91, 0.4);
+  border-radius: 6px;
+  border: 2px solid #09090b;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 85, 247, 0.45);
+  background: rgba(113, 113, 122, 0.6);
 }
 
+/* Hairline border helper — used heavily across cards/tables. */
 .hairline {
-  border-color: rgba(168, 85, 247, 0.1);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* Gradient text for hero numbers + key labels */
-.gradient-text {
-  background: linear-gradient(135deg, #a855f7 0%, #d946ef 60%, #ec4899 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+/* Subtle row hover for tables. */
+.row-hover {
+  transition: background-color 120ms ease-out;
 }
-
-/* Card glow utilities */
-.card-glow {
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.7),
-    0 0 0 1px rgba(168, 85, 247, 0.08) inset,
-    0 0 24px rgba(168, 85, 247, 0.06);
-}
-
-.card-glow-strong {
-  box-shadow:
-    0 0 24px rgba(168, 85, 247, 0.18),
-    0 0 0 1px rgba(168, 85, 247, 0.2) inset,
-    0 0 60px rgba(217, 70, 239, 0.08);
-}
-
-/* Shimmering accent line under headers */
-.shimmer-bar {
-  position: relative;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(168, 85, 247, 0.4) 25%,
-    rgba(217, 70, 239, 0.6) 50%,
-    rgba(168, 85, 247, 0.4) 75%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 4s linear infinite;
-}
-
-/* Loading-state shimmer */
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    rgba(168, 85, 247, 0.05) 0%,
-    rgba(168, 85, 247, 0.18) 50%,
-    rgba(168, 85, 247, 0.05) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.6s linear infinite;
+.row-hover:hover {
+  background-color: rgba(255, 255, 255, 0.02);
 }

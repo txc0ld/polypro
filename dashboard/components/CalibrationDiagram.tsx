@@ -37,20 +37,20 @@ export function CalibrationDiagram({ data }: { data: CalibrationPoint[] }) {
     <div className="h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <ScatterChart margin={{ top: 10, right: 16, bottom: 10, left: 0 }}>
-          <CartesianGrid stroke="#1f262e" strokeDasharray="3 3" />
+          <CartesianGrid stroke="#1f1f23" strokeDasharray="2 4" />
           <XAxis
             type="number"
             dataKey="meanPredicted"
             name="predicted"
             domain={[0, 1]}
-            stroke="#8a95a4"
-            tick={{ fontSize: 10 }}
+            stroke="#52525b"
+            tick={{ fontSize: 10, fill: "#71717a" }}
             tickFormatter={(v: number) => v.toFixed(1)}
             label={{
               value: "predicted",
               position: "insideBottom",
               offset: -2,
-              fill: "#8a95a4",
+              fill: "#71717a",
               fontSize: 11,
             }}
           />
@@ -59,14 +59,14 @@ export function CalibrationDiagram({ data }: { data: CalibrationPoint[] }) {
             dataKey="empirical"
             name="empirical"
             domain={[0, 1]}
-            stroke="#8a95a4"
-            tick={{ fontSize: 10 }}
+            stroke="#52525b"
+            tick={{ fontSize: 10, fill: "#71717a" }}
             tickFormatter={(v: number) => v.toFixed(1)}
             label={{
               value: "empirical",
               angle: -90,
               position: "insideLeft",
-              fill: "#8a95a4",
+              fill: "#71717a",
               fontSize: 11,
             }}
           />
@@ -79,9 +79,11 @@ export function CalibrationDiagram({ data }: { data: CalibrationPoint[] }) {
           />
           <Tooltip
             contentStyle={{
-              background: "#13171c",
-              border: "1px solid #1f262e",
-              fontSize: 12,
+              background: "#0c0c0f",
+              border: "1px solid #1f1f23",
+              fontSize: 11,
+              borderRadius: 6,
+              color: "#fafafa",
             }}
             formatter={(v: number, name: string) =>
               name === "n" ? `${v}` : (v as number).toFixed(3)
@@ -92,15 +94,15 @@ export function CalibrationDiagram({ data }: { data: CalibrationPoint[] }) {
               { x: 0, y: 0 },
               { x: 1, y: 1 },
             ]}
-            stroke="#8a95a4"
+            stroke="#52525b"
             strokeDasharray="3 3"
             ifOverflow="extendDomain"
           />
-          <Scatter data={data} fill="#6ee7b7" />
+          <Scatter data={data} fill="#8b5cf6" />
           <Line
             data={data}
             dataKey="empirical"
-            stroke="#6ee7b7"
+            stroke="#8b5cf6"
             dot={false}
             type="linear"
           />

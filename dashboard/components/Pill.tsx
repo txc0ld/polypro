@@ -6,15 +6,27 @@ export type PillTone =
   | "warn"
   | "bad"
   | "info"
+  | "accent"
   | "muted";
 
 const TONE: Record<PillTone, string> = {
-  neutral: "border-accent/30 bg-accent/[0.06] text-ink",
-  good: "border-good/50 bg-good/10 text-good shadow-glow-good",
-  warn: "border-warn/50 bg-warn/10 text-warn",
-  bad: "border-bad/50 bg-bad/10 text-bad shadow-glow-bad",
-  info: "border-sky/50 bg-sky/10 text-sky",
-  muted: "border-border/60 bg-transparent text-subtle",
+  neutral: "border-border bg-panel text-muted",
+  good: "border-good/40 bg-good/[0.08] text-good",
+  warn: "border-warn/40 bg-warn/[0.08] text-warn",
+  bad: "border-bad/40 bg-bad/[0.08] text-bad",
+  info: "border-sky/40 bg-sky/[0.08] text-sky",
+  accent: "border-accent/40 bg-accent/[0.08] text-accent-soft",
+  muted: "border-border bg-transparent text-subtle",
+};
+
+const DOT: Record<PillTone, string> = {
+  neutral: "bg-muted",
+  good: "bg-good",
+  warn: "bg-warn",
+  bad: "bg-bad",
+  info: "bg-sky",
+  accent: "bg-accent",
+  muted: "bg-subtle",
 };
 
 export function Pill({
@@ -36,17 +48,7 @@ export function Pill({
     >
       {dot ? (
         <span
-          className={`h-1.5 w-1.5 rounded-full ${
-            tone === "good"
-              ? "bg-good"
-              : tone === "warn"
-                ? "bg-warn"
-                : tone === "bad"
-                  ? "bg-bad"
-                  : tone === "info"
-                    ? "bg-sky"
-                    : "bg-subtle"
-          } ${pulse ? "animate-pulse-soft" : ""}`}
+          className={`h-1.5 w-1.5 rounded-full ${DOT[tone]} ${pulse ? "animate-pulse-soft" : ""}`}
         />
       ) : null}
       {children}
