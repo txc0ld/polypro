@@ -199,7 +199,7 @@ export default async function TradeCourt({
             v={
               <span
                 className={
-                  riskPayload?.approved ? "text-accent" : "text-bad"
+                  riskPayload?.approved ? "text-good" : "text-bad"
                 }
               >
                 {String(riskPayload?.approved ?? false)}
@@ -312,7 +312,7 @@ export default async function TradeCourt({
             k="ok"
             v={
               <span
-                className={guardPayload?.ok ? "text-accent" : "text-bad"}
+                className={guardPayload?.ok ? "text-good" : "text-bad"}
               >
                 {String(guardPayload?.ok)}
               </span>
@@ -348,7 +348,7 @@ export default async function TradeCourt({
               k="clv"
               v={
                 <span
-                  className={clv.clv > 0 ? "text-accent" : "text-bad"}
+                  className={clv.clv > 0 ? "text-good" : "text-bad"}
                 >
                   {clv.clv > 0 ? "+" : ""}
                   {(clv.clv * 100).toFixed(2)}c
@@ -368,10 +368,10 @@ export default async function TradeCourt({
     <div className="space-y-6">
       <header className="flex items-baseline justify-between gap-3">
         <div>
-          <h1 className="text-display font-semibold tracking-tight">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             Trade Court
           </h1>
-          <p className="text-sm text-subtle">
+          <p className="mt-1 text-xs text-subtle">
             Signal{" "}
             <span className="font-mono text-muted">
               {shortId(signalId, 16)}
@@ -388,11 +388,11 @@ export default async function TradeCourt({
             <div>
               <Link
                 href={`/probability/${encodeURIComponent(market.id)}`}
-                className="text-lg font-medium text-ink hover:text-accent"
+                className="text-lg font-medium text-ink hover:text-accent-soft"
               >
                 {market.question}
               </Link>
-              <div className="mt-1 flex items-center gap-2 text-xs text-subtle">
+              <div className="mt-1 flex items-center gap-2 text-xs text-faint">
                 <Pill tone="info">{market.category ?? "—"}</Pill>
                 <Pill
                   tone={market.status === "watching" ? "good" : "muted"}
@@ -422,14 +422,14 @@ export default async function TradeCourt({
         )}
       </Card>
 
-      <div className="grid grid-cols-2 gap-px border border-border bg-border/40 md:grid-cols-4">
-        <div className="bg-panel p-4">
-          <Stat label="model" value={fmtPct(modelProb, 1)} tone="good" />
+      <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border md:grid-cols-4">
+        <div className="border-b border-r border-border bg-surface p-4 md:border-b-0">
+          <Stat label="model" value={fmtPct(modelProb, 1)} tone="accent" />
         </div>
-        <div className="bg-panel p-4">
-          <Stat label="market" value={fmtPct(marketPrice, 1)} tone="warn" />
+        <div className="border-b border-border bg-surface p-4 md:border-b-0 md:border-r">
+          <Stat label="market" value={fmtPct(marketPrice, 1)} />
         </div>
-        <div className="bg-panel p-4">
+        <div className="border-r border-border bg-surface p-4">
           <Stat
             label="edge"
             value={
@@ -437,10 +437,12 @@ export default async function TradeCourt({
                 ? "—"
                 : `${(effectiveEdge * 10000).toFixed(0)}bp`
             }
-            tone={effectiveEdge !== null && effectiveEdge > 0 ? "good" : "default"}
+            tone={
+              effectiveEdge !== null && effectiveEdge > 0 ? "good" : "default"
+            }
           />
         </div>
-        <div className="bg-panel p-4">
+        <div className="bg-surface p-4">
           <Stat
             label="size approved"
             value={fmtUsd(riskPayload?.approved_size_usdc ?? null, 2)}
@@ -454,7 +456,7 @@ export default async function TradeCourt({
             {evidenceRefs.map((r) => (
               <li
                 key={r}
-                className="rounded border border-hairline bg-surface px-2 py-1 font-mono text-muted"
+                className="rounded border border-border bg-panel px-2 py-1 font-mono text-muted"
               >
                 {r}
               </li>

@@ -105,10 +105,12 @@ function ExposureBars({
               </span>
               <span className="tabular text-subtle">
                 {fmtUsd(r.used, 2)}{" "}
-                <span className="text-[10px]">/ {fmtUsd(r.cap, 0)}</span>
+                <span className="text-[10px] text-faint">
+                  / {fmtUsd(r.cap, 0)}
+                </span>
               </span>
             </div>
-            <div className="mt-1 h-[3px] rounded bg-hairline">
+            <div className="mt-1 h-[3px] rounded bg-border">
               <div
                 className={`h-[3px] rounded ${tone}`}
                 style={{ width: `${Math.max(2, pct * 100)}%` }}
@@ -196,34 +198,34 @@ export default async function PortfolioSentinel() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight gradient-text">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             Portfolio Sentinel
           </h1>
-          <p className="text-sm text-subtle">
-            {positions.length} open position{positions.length === 1 ? "" : "s"} ·{" "}
-            {clvWithValue.length} resolved trade
+          <p className="mt-1 text-xs text-subtle">
+            {positions.length} open position{positions.length === 1 ? "" : "s"}{" "}
+            · {clvWithValue.length} resolved trade
             {clvWithValue.length === 1 ? "" : "s"} with CLV
           </p>
         </div>
         <Pill tone="muted">PRD §19.4</Pill>
       </header>
 
-      <div className="grid grid-cols-2 gap-px border border-border bg-border/40 md:grid-cols-4">
-        <div className="bg-panel p-4">
+      <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border md:grid-cols-4">
+        <div className="border-b border-r border-border bg-surface p-4 md:border-b-0">
           <Stat
             label="open positions"
             value={positions.length}
             hint="from positions table"
           />
         </div>
-        <div className="bg-panel p-4">
+        <div className="border-b border-border bg-surface p-4 md:border-b-0 md:border-r">
           <Stat
             label="daily pnl"
             value={
               <span
                 className={
                   dailyPnl > 0
-                    ? "text-accent"
+                    ? "text-good"
                     : dailyPnl < 0
                       ? "text-bad"
                       : "text-ink"
@@ -236,14 +238,14 @@ export default async function PortfolioSentinel() {
             hint="last 24h · from log"
           />
         </div>
-        <div className="bg-panel p-4">
+        <div className="border-r border-border bg-surface p-4">
           <Stat
             label="kelly used"
             value={fmtPct(kellyUsed, 2)}
             hint="last evaluate"
           />
         </div>
-        <div className="bg-panel p-4">
+        <div className="bg-surface p-4">
           <Stat
             label="stuck orders"
             value={stuck.length}
@@ -285,7 +287,7 @@ export default async function PortfolioSentinel() {
                 {walletPositions.map((w) => (
                   <tr
                     key={`${w.conditionId}-${w.outcome}`}
-                    className="border-t border-hairline"
+                    className="border-t border-border"
                   >
                     <td className="max-w-[28ch] truncate px-4 py-2 text-ink">
                       {w.market || shortId(w.conditionId, 12)}
@@ -301,7 +303,7 @@ export default async function PortfolioSentinel() {
                     <td
                       className={`px-4 py-2 text-right tabular ${
                         w.cashPnl > 0
-                          ? "text-accent"
+                          ? "text-good"
                           : w.cashPnl < 0
                             ? "text-bad"
                             : "text-muted"
@@ -341,12 +343,12 @@ export default async function PortfolioSentinel() {
                   return (
                     <tr
                       key={`${p.market_id}-${p.token_id}`}
-                      className="border-t border-hairline"
+                      className="border-t border-border"
                     >
                       <td className="max-w-[28ch] truncate px-4 py-2 text-ink">
                         <Link
                           href={`/probability/${encodeURIComponent(p.market_id)}`}
-                          className="hover:text-accent"
+                          className="hover:text-accent-soft"
                         >
                           {shortId(p.market_id, 12)}
                         </Link>
@@ -364,7 +366,7 @@ export default async function PortfolioSentinel() {
                       <td
                         className={`px-4 py-2 text-right tabular ${
                           unrealized > 0
-                            ? "text-accent"
+                            ? "text-good"
                             : unrealized < 0
                               ? "text-bad"
                               : "text-muted"
@@ -376,9 +378,9 @@ export default async function PortfolioSentinel() {
                       <td
                         className={`px-4 py-2 text-right tabular ${
                           clv === undefined || clv.clv === null
-                            ? "text-subtle"
+                            ? "text-faint"
                             : clv.clv > 0
-                              ? "text-accent"
+                              ? "text-good"
                               : "text-bad"
                         }`}
                       >
@@ -406,7 +408,7 @@ export default async function PortfolioSentinel() {
                   <div className="text-caption uppercase tracking-wider text-subtle">
                     on-chain value
                   </div>
-                  <div className="tabular text-3xl font-medium text-ink">
+                  <div className="tabular text-hero font-medium text-ink">
                     {fmtUsd(walletValue.totalUsd, 2)}
                   </div>
                 </div>
@@ -478,7 +480,7 @@ export default async function PortfolioSentinel() {
               <span
                 className={
                   (clvOverallMean ?? 0) > 0
-                    ? "text-accent"
+                    ? "text-good"
                     : (clvOverallMean ?? 0) < 0
                       ? "text-bad"
                       : ""
@@ -502,7 +504,7 @@ export default async function PortfolioSentinel() {
             {clvByStrategy.map((s) => {
               const magnitude = Math.min(1, Math.abs(s.mean) / 0.05);
               const tone =
-                s.mean > 0 ? "bg-accent" : s.mean < 0 ? "bg-bad" : "bg-border";
+                s.mean > 0 ? "bg-good" : s.mean < 0 ? "bg-bad" : "bg-faint";
               return (
                 <li key={s.strategy}>
                   <div className="flex items-baseline justify-between gap-2">
@@ -512,7 +514,7 @@ export default async function PortfolioSentinel() {
                       <span
                         className={
                           s.mean > 0
-                            ? "text-accent"
+                            ? "text-good"
                             : s.mean < 0
                               ? "text-bad"
                               : "text-muted"
@@ -523,7 +525,7 @@ export default async function PortfolioSentinel() {
                       </span>
                     </span>
                   </div>
-                  <div className="mt-1 h-[3px] rounded bg-hairline">
+                  <div className="mt-1 h-[3px] rounded bg-border">
                     <div
                       className={`h-[3px] rounded ${tone}`}
                       style={{
@@ -544,7 +546,7 @@ export default async function PortfolioSentinel() {
           {stuck.length === 0 ? (
             <EmptyState title="none" />
           ) : (
-            <ul className="divide-y divide-hairline text-xs">
+            <ul className="divide-y divide-border text-xs">
               {stuck.map((s) => (
                 <li
                   key={s.exchangeOrderId}
@@ -569,7 +571,7 @@ export default async function PortfolioSentinel() {
           {incidents.length === 0 ? (
             <EmptyState title="no incidents" />
           ) : (
-            <ul className="divide-y divide-hairline text-xs">
+            <ul className="divide-y divide-border text-xs">
               {incidents.map((r) => {
                 const detail =
                   (r.payload as { detail?: string; reason?: string }).detail ??

@@ -26,10 +26,10 @@ export default function ProbabilityIndex() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight gradient-text">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             Probability Lab
           </h1>
-          <p className="text-sm text-subtle">
+          <p className="mt-1 text-xs text-subtle">
             Calibration diagnostics + per-market drilldowns
           </p>
         </div>
@@ -57,17 +57,17 @@ export default function ProbabilityIndex() {
             hint="Run the bot or seed logs/polyflow.db to populate."
           />
         ) : (
-          <ul className="divide-y divide-hairline text-xs">
+          <ul className="divide-y divide-border text-xs">
             {markets.slice(0, 100).map((m) => (
               <li key={m.id}>
                 <Link
                   href={`/probability/${encodeURIComponent(m.id)}`}
-                  className="flex items-center justify-between gap-3 px-2 py-2 transition-colors hover:bg-white/[0.02]"
+                  className="row-hover flex items-center justify-between gap-3 px-2 py-2"
                 >
                   <span className="truncate text-ink" title={m.question}>
                     {m.question}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-subtle">
+                  <span className="shrink-0 font-mono text-[10px] text-faint">
                     {shortId(m.id, 10)} · q={fmtNum(m.market_quality, 2)}
                   </span>
                 </Link>

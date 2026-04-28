@@ -87,7 +87,7 @@ export default async function ProbabilityLab({
     <div className="space-y-6">
       <header className="space-y-3">
         <div className="flex items-baseline justify-between gap-4">
-          <h1 className="text-display font-semibold tracking-tight">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             {market.question}
           </h1>
           <Pill tone="muted">PRD §19.3</Pill>
@@ -97,7 +97,7 @@ export default async function ProbabilityLab({
           <Pill tone={market.status === "watching" ? "good" : "muted"}>
             {market.status}
           </Pill>
-          <span className="font-mono text-subtle">{shortId(market.id, 18)}</span>
+          <span className="font-mono text-faint">{shortId(market.id, 18)}</span>
           {closeMs !== null ? (
             <span className="text-subtle">
               ·{" "}
@@ -116,8 +116,8 @@ export default async function ProbabilityLab({
         <Card title="model probability vs market price">
           <ProbabilityChart data={points} />
           <p className="mt-3 text-xs text-subtle">
-            {points.length} estimate{points.length === 1 ? "" : "s"} · band shows ±1σ
-            uncertainty.
+            {points.length} estimate{points.length === 1 ? "" : "s"} · band
+            shows ±1σ uncertainty.
           </p>
         </Card>
 
@@ -133,7 +133,7 @@ export default async function ProbabilityLab({
                 <div className="text-caption uppercase tracking-wider text-subtle">
                   model probability
                 </div>
-                <div className="tabular text-3xl font-medium text-accent">
+                <div className="tabular text-hero font-medium text-accent-soft">
                   {fmtPct(latest.modelProbability, 1)}
                 </div>
               </div>
@@ -141,11 +141,11 @@ export default async function ProbabilityLab({
                 <div className="text-caption uppercase tracking-wider text-subtle">
                   market price
                 </div>
-                <div className="tabular text-3xl font-medium text-warn">
+                <div className="tabular text-hero font-medium text-muted">
                   {fmtPct(latest.marketPrice, 1)}
                 </div>
               </div>
-              <div className="border-t border-hairline pt-3">
+              <div className="border-t border-border pt-3">
                 <div className="text-caption uppercase tracking-wider text-subtle">
                   gap (model − market)
                 </div>
@@ -154,7 +154,7 @@ export default async function ProbabilityLab({
                     gap === null
                       ? "text-ink"
                       : gap > 0
-                        ? "text-accent"
+                        ? "text-good"
                         : "text-bad"
                   }`}
                 >
@@ -164,13 +164,11 @@ export default async function ProbabilityLab({
                 </div>
               </div>
               {bucketStat ? (
-                <div className="space-y-1 border-t border-hairline pt-3">
+                <div className="border-t border-border pt-3">
                   <KeyRow
                     k="calibration bucket"
                     v={
-                      <span className="text-accent">
-                        {bucketLabel}
-                      </span>
+                      <span className="text-accent-soft">{bucketLabel}</span>
                     }
                   />
                   <KeyRow
@@ -205,11 +203,11 @@ export default async function ProbabilityLab({
               return (
                 <div
                   key={strategy}
-                  className="rounded border border-hairline bg-surface p-3"
+                  className="rounded border border-border bg-panel p-3"
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <StrategyBadge strategy={strategy} size="sm" />
-                    <span className="text-[10px] text-subtle">
+                    <span className="text-[10px] text-faint">
                       {timeAgo(newest.created_at)}
                     </span>
                   </div>
@@ -224,7 +222,7 @@ export default async function ProbabilityLab({
                       <span
                         className={
                           newest.status === "PLACE"
-                            ? "text-accent"
+                            ? "text-good"
                             : newest.status === "REJECT"
                               ? "text-bad"
                               : "text-muted"
@@ -235,7 +233,7 @@ export default async function ProbabilityLab({
                     }
                   />
                   {refs.length > 0 ? (
-                    <div className="mt-2 text-[10px] text-subtle">
+                    <div className="mt-2 text-[10px] text-faint">
                       evidence: {refs.slice(0, 2).join(", ")}
                       {refs.length > 2 ? ` +${refs.length - 2}` : ""}
                     </div>
@@ -250,7 +248,7 @@ export default async function ProbabilityLab({
       {/* Market metadata + resolution rules in a clean grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card title="metadata">
-          <div className="space-y-1">
+          <div>
             <KeyRow k="liquidity" v={fmtUsd(market.liquidity_usd, 0)} />
             <KeyRow k="volume 24h" v={fmtUsd(market.volume_24h_usd, 0)} />
             <KeyRow
@@ -270,7 +268,10 @@ export default async function ProbabilityLab({
               }
             />
             <KeyRow k="quality" v={fmtNum(market.market_quality, 2)} />
-            <KeyRow k="resolution risk" v={fmtNum(market.resolution_risk, 2)} />
+            <KeyRow
+              k="resolution risk"
+              v={fmtNum(market.resolution_risk, 2)}
+            />
             <KeyRow
               k="quickfire"
               v={
@@ -284,7 +285,7 @@ export default async function ProbabilityLab({
         </Card>
 
         <Card title="market identifiers">
-          <div className="space-y-1 font-mono text-xs">
+          <div>
             <KeyRow k="market id" v={shortId(market.id, 24)} mono />
             <KeyRow k="event id" v={shortId(market.event_id, 24)} mono />
             <KeyRow k="created" v={timeAgo(market.created_at)} />

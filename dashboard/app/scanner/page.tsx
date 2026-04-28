@@ -121,9 +121,9 @@ function MarketRowView({ m }: { m: MarketRow }) {
   return (
     <Link
       href={`/probability/${encodeURIComponent(m.id)}`}
-      className="block border-t border-hairline transition-colors hover:bg-white/[0.02]"
+      className="row-hover block border-t border-border"
     >
-      <div className="grid grid-cols-12 items-center gap-3 px-4 py-2.5 text-xs">
+      <div className="grid grid-cols-12 items-center gap-3 px-4 py-2 text-xs">
         <div className="col-span-5 truncate text-ink" title={m.question}>
           {m.question}
         </div>
@@ -138,32 +138,34 @@ function MarketRowView({ m }: { m: MarketRow }) {
         </div>
         <div className="col-span-1">
           <div className="flex items-center gap-1.5">
-            <div className="h-1 flex-1 rounded bg-hairline">
+            <div className="h-1 flex-1 rounded bg-border">
               <div
-                className="h-1 rounded bg-accent/70"
-                style={{ width: `${Math.min(100, Math.max(2, qfScore * 100))}%` }}
+                className="h-1 rounded bg-accent"
+                style={{
+                  width: `${Math.min(100, Math.max(2, qfScore * 100))}%`,
+                }}
               />
             </div>
-            <span className="tabular text-[10px] text-subtle">
+            <span className="tabular text-[10px] text-faint">
               {qfScore.toFixed(2)}
             </span>
           </div>
         </div>
         <div className="col-span-2 flex flex-wrap items-center gap-1">
           {strategies.length > 0 ? (
-            strategies.slice(0, 3).map((s) => (
-              <StrategyBadge key={s} strategy={s} size="sm" />
-            ))
+            strategies
+              .slice(0, 3)
+              .map((s) => <StrategyBadge key={s} strategy={s} size="sm" />)
           ) : (
-            <span className="text-[10px] text-subtle">—</span>
+            <span className="text-[10px] text-faint">—</span>
           )}
           {strategies.length > 3 ? (
-            <span className="text-[10px] text-subtle">
+            <span className="text-[10px] text-faint">
               +{strategies.length - 3}
             </span>
           ) : null}
         </div>
-        <div className="col-span-1 text-right font-mono text-[10px] text-subtle">
+        <div className="col-span-1 text-right font-mono text-[10px] text-faint">
           {shortId(m.id, 8)}
         </div>
       </div>
@@ -185,7 +187,7 @@ function MarketGroup({
       title={label}
       action={<span>{markets.length} markets</span>}
     >
-      <div className="grid grid-cols-12 gap-3 px-4 py-2 text-caption uppercase tracking-wider text-subtle">
+      <div className="grid grid-cols-12 gap-3 px-4 py-2 text-caption uppercase tracking-wider text-faint">
         <div className="col-span-5">question</div>
         <div className="col-span-1 text-right">bid/ask</div>
         <div className="col-span-1 text-right">spread</div>
@@ -236,10 +238,10 @@ export default async function ScannerBoard() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight gradient-text">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             Scanner Board
           </h1>
-          <p className="text-sm text-subtle">
+          <p className="mt-1 text-xs text-subtle">
             {allMarkets.length} markets observed · {watching.length} watching ·{" "}
             {skipped.length} skipped · {manual.length} manual review
           </p>
@@ -282,9 +284,9 @@ export default async function ScannerBoard() {
                         </span>
                         <span className="tabular text-subtle">{count}</span>
                       </div>
-                      <div className="mt-1 h-[3px] rounded bg-hairline">
+                      <div className="mt-1 h-[3px] rounded bg-border">
                         <div
-                          className="h-[3px] rounded bg-warn/60"
+                          className="h-[3px] rounded bg-warn/70"
                           style={{
                             width: `${Math.max(2, pct * 100)}%`,
                           }}
@@ -298,10 +300,10 @@ export default async function ScannerBoard() {
           </Card>
 
           <Card title="status">
-            <ul className="space-y-2 text-xs">
+            <ul className="space-y-1.5 text-xs">
               <li className="flex justify-between">
                 <span className="text-subtle">watching</span>
-                <span className="tabular text-accent">{watching.length}</span>
+                <span className="tabular text-good">{watching.length}</span>
               </li>
               <li className="flex justify-between">
                 <span className="text-subtle">manual_only</span>
@@ -311,30 +313,32 @@ export default async function ScannerBoard() {
                 <span className="text-subtle">skipped</span>
                 <span className="tabular text-bad">{skipped.length}</span>
               </li>
-              <li className="flex justify-between border-t border-hairline pt-2">
+              <li className="mt-1 flex justify-between border-t border-border pt-2">
                 <span className="text-subtle">total observed</span>
                 <span className="tabular text-ink">{allMarkets.length}</span>
               </li>
               <li className="flex justify-between">
                 <span className="text-subtle">classify entries</span>
-                <span className="tabular text-ink">{classifyEntries.length}</span>
+                <span className="tabular text-ink">
+                  {classifyEntries.length}
+                </span>
               </li>
             </ul>
           </Card>
 
           {manual.length > 0 ? (
             <Card title={`manual review (${manual.length})`} padded={false}>
-              <ul className="divide-y divide-hairline">
+              <ul className="divide-y divide-border">
                 {manual.slice(0, 12).map((m) => (
                   <li key={m.id} className="px-4 py-2 text-xs">
                     <Link
                       href={`/probability/${encodeURIComponent(m.id)}`}
-                      className="block truncate text-ink hover:text-accent"
+                      className="block truncate text-ink hover:text-accent-soft"
                       title={m.question}
                     >
                       {m.question}
                     </Link>
-                    <span className="text-[10px] text-subtle">
+                    <span className="text-[10px] text-faint">
                       {m.category ?? "—"}
                     </span>
                   </li>

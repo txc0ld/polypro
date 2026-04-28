@@ -30,23 +30,23 @@ export default async function LiveDesk() {
     (s) => s.action === "PLACED" || s.action === "FILLED",
   ).length;
   const blockedCount = signals.filter((s) =>
-    ["RISK_REJECTED", "FORMATTER_REJECTED", "INCIDENT_BLOCKED"].includes(s.action),
+    ["RISK_REJECTED", "FORMATTER_REJECTED", "INCIDENT_BLOCKED"].includes(
+      s.action,
+    ),
   ).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-display font-semibold tracking-tight gradient-text">
+          <h1 className="text-display font-semibold tracking-tight text-ink">
             Live Desk
           </h1>
-          <p className="text-sm text-subtle">
+          <p className="mt-1 text-xs text-subtle">
             Autonomous runtime · 7 strategies wired · auto-refresh 10s
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-subtle">
-          <Pill tone="neutral">PRD §19.1</Pill>
-        </div>
+        <Pill tone="muted">PRD §19.1</Pill>
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -97,11 +97,11 @@ export default async function LiveDesk() {
                   <div className="text-caption uppercase tracking-wider text-subtle">
                     total value
                   </div>
-                  <div className="tabular text-3xl font-medium text-ink">
+                  <div className="tabular text-hero font-medium text-ink">
                     {fmtUsd(wallet.totalUsd, 2)}
                   </div>
                 </div>
-                <div className="space-y-1">
+                <div>
                   <KeyRow
                     k="bankroll target"
                     v={fmtUsd(status.policy.bankrollUsdc, 0)}
@@ -134,14 +134,14 @@ export default async function LiveDesk() {
           </Card>
 
           <Card title="cycle health">
-            <div className="space-y-1">
+            <div>
               <KeyRow
                 k="daily pnl"
                 v={
                   <span
                     className={
                       status.dailyPnlUsdc > 0
-                        ? "text-accent"
+                        ? "text-good"
                         : status.dailyPnlUsdc < 0
                           ? "text-bad"
                           : "text-ink"
@@ -167,7 +167,7 @@ export default async function LiveDesk() {
                 v={
                   <span>
                     {signals.length}{" "}
-                    <span className="text-subtle">
+                    <span className="text-faint">
                       ({placedCount} placed · {blockedCount} blocked)
                     </span>
                   </span>
