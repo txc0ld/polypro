@@ -41,10 +41,22 @@ class SubagentScheduler:
     def __init__(self, tasks: list[SubagentTask] | None = None) -> None:
         self._tasks: dict[str, SubagentTask] = {t.name: t for t in (tasks or [])}
         self._running: dict[str, asyncio.Task] = {}
+        self._long_running: dict[str, Callable[[], Awaitable[None]]] = {}
         self._stop_event = asyncio.Event()
 
     def register(self, task: SubagentTask) -> None:
         self._tasks[task.name] = task
+
+    def register_long_running(
+        self, name: str, factory: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Register a coroutine factory that runs forever (no periodic ticks).
+
+        Used by stream consumers (e.g. the user-channel WebSocket) that own
+        their own loop. ``factory`` is called once on ``start()``; cancellation
+        on ``stop()`` is the only way it ends.
+        """
+        self._long_running[name] = factory
 
     def status(self) -> dict[str, dict]:
         out: dict[str, dict] = {}
@@ -66,6 +78,10 @@ class SubagentScheduler:
             if name in self._running and not self._running[name].done():
                 continue
             self._running[name] = asyncio.create_task(self._loop(t), name=f"subagent:{name}")
+        for name, factory in self._long_running.items():
+            if name in self._running and not self._running[name].done():
+                continue
+            self._running[name] = asyncio.create_task(factory(), name=f"longrun:{name}")
 
     async def stop(self) -> None:
         self._stop_event.set()

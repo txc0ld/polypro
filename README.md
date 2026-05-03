@@ -188,6 +188,33 @@ Mirrors `client.createOrDeriveApiKey()` from `@polymarket/clob-client-v2`.
 
 `signatureType` defaults to `1` (POLY_PROXY); set on adapter construction.
 
+## WebSocket user channel
+
+`polyflow.adapters.polymarket_websocket.PolymarketUserWebSocket` keeps a
+persistent connection to `wss://ws-subscriptions-clob.polymarket.com/ws/user`
+so the runtime hears about its own fills, order updates, and cancels in
+real time (PRD §7.1, §16.3, §21.2).
+
+- Authenticates with the L2 key set (`apiKey` / `secret` / `passphrase`) via a
+  single subscribe message: `{"auth": {...}, "type": "user", "markets": [...]}`.
+- Subscribes to the active watchlist (`Watchlist.active()`) and re-subscribes
+  on every reconnect so a re-balanced watchlist is honoured.
+- Emits `WSFillEvent`, `WSOrderUpdateEvent`, and `WSCancelEvent` (see
+  `polyflow.types`) onto an `asyncio.Queue` consumed by
+  `Runtime.run_user_ws_consumer`. Fills update the SQLite `positions` row
+  (weighted-average on accumulation, size reduction on sell), then re-run
+  `evaluate_exposure()` from the post-order Kelly guard. Any breach trips
+  `IncidentManager.trip_killed`.
+- Reconnects on disconnect with exponential backoff + full jitter
+  (`BackoffPolicy`, capped at 30s by default).
+- Refreshes `PortfolioSentinel.last_user_channel_event` on every event so the
+  sentinel's staleness check (`max_user_channel_age_seconds`, default 90s)
+  trips `LOCKDOWN` when the channel goes silent.
+
+Registered in `run_forever` as two long-running scheduler tasks (`user_ws`
+runs the socket; `user_ws_consumer` drains the queue) only when full L2
+trade credentials are present — read-only deployments never open the socket.
+
 ## Live trading gates
 
 Credentials alone are not enough to place live orders. Live placement requires

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import structlog
 
@@ -16,6 +17,7 @@ from .adapters.gamma import GammaAdapter, StubGammaAdapter
 from .adapters.anchors import FileAnchorAdapter
 from .adapters.news import RSSNewsAdapter
 from .adapters.polymarket_gamma import PolymarketGammaAdapter
+from .adapters.polymarket_websocket import PolymarketUserWebSocket
 from .config import Policy
 from .incident import IncidentManager
 from .logger import ImmutableLogger
@@ -24,20 +26,28 @@ from .order_formatter import format_order
 from .persistence import SQLiteStore
 from .post_order_hook import evaluate_exposure
 from .risk_governor import KillSwitch, evaluate
+from .secrets import load_credentials
 from .signals import decide_action, score_signal
 from .subagents import SubagentScheduler, SubagentTask
 from .subagents.heartbeat import Heartbeat
 from .subagents.order_sync import OrderSync
+from .subagents.portfolio_sentinel import PortfolioSentinel
 from .subagents.reference_repo_monitor import ReferenceRepoMonitor
 from .subagents.resolution_monitor import ResolutionMonitor
 from .subagents.strategy_automation import StrategyAutomation, TradeActivityAnalyzer
 from .types import (
     Mode,
     OrderType,
+    Position,
     ProbabilityEstimate,
     RiskState,
+    Side,
     Signal,
     Strategy,
+    WSCancelEvent,
+    WSEvent,
+    WSFillEvent,
+    WSOrderUpdateEvent,
 )
 from .watchlist import Watchlist
 
@@ -57,6 +67,7 @@ class Runtime:
     store: SQLiteStore | None = None
     heartbeat: Heartbeat | None = None
     scheduler: SubagentScheduler = field(default_factory=SubagentScheduler)
+    sentinel: PortfolioSentinel | None = None
     wallet_address: str | None = None
 
     async def tick_scan(self) -> list[str]:
@@ -253,6 +264,125 @@ class Runtime:
 
         return {"placed": True, "exchange_order_id": record.get("exchange_order_id")}
 
+    # ------------------------------------------------------------------
+    # User-channel WebSocket consumer (PRD §16.3)
+    # ------------------------------------------------------------------
+
+    async def consume_user_ws_event(self, event: WSEvent) -> None:
+        """Apply one user-channel event to local state.
+
+        Fills update the SQLite ``positions`` row (weighted-average price on
+        accumulation, size reduction on sell) and re-run the post-order Kelly
+        guard. Order updates and cancels are logged for audit but do not move
+        positions. Every event refreshes the PortfolioSentinel staleness
+        timestamp so the sentinel knows the channel is alive.
+        """
+        if self.sentinel is not None:
+            self.sentinel.last_user_channel_event = datetime.now(timezone.utc)
+
+        if isinstance(event, WSFillEvent):
+            await self._apply_fill(event)
+        elif isinstance(event, WSOrderUpdateEvent):
+            self.logger.log(
+                actor="user_ws",
+                action="order_update",
+                market_id=event.market_id,
+                input_obj=event.model_dump(mode="json"),
+                output_obj={"status": event.status},
+                payload=event.model_dump(mode="json"),
+            )
+        elif isinstance(event, WSCancelEvent):
+            self.logger.log(
+                actor="user_ws",
+                action="cancel",
+                market_id=event.market_id,
+                input_obj=event.model_dump(mode="json"),
+                output_obj={"reason": event.reason or ""},
+                payload=event.model_dump(mode="json"),
+            )
+
+    async def _apply_fill(self, fill: WSFillEvent) -> None:
+        if self.store is not None:
+            existing = next(
+                (
+                    r
+                    for r in self.store.get_open_positions()
+                    if r["market_id"] == fill.market_id and r["token_id"] == fill.token_id
+                ),
+                None,
+            )
+            if existing is None:
+                new_size = fill.size if fill.side is Side.BUY else -fill.size
+                new_avg = fill.price
+            else:
+                cur_size = float(existing["size"])
+                cur_avg = float(existing["avg_price"])
+                if fill.side is Side.BUY:
+                    new_size = cur_size + fill.size
+                    new_avg = (
+                        (cur_size * cur_avg + fill.size * fill.price) / new_size
+                        if new_size > 0
+                        else fill.price
+                    )
+                else:
+                    new_size = max(0.0, cur_size - fill.size)
+                    new_avg = cur_avg
+
+            self.store.upsert_position(
+                Position(
+                    market_id=fill.market_id,
+                    token_id=fill.token_id,
+                    outcome=fill.outcome,
+                    size=new_size,
+                    avg_price=new_avg,
+                    market_value=new_size * fill.price,
+                )
+            )
+
+        self.logger.log(
+            actor="user_ws",
+            action="fill",
+            market_id=fill.market_id,
+            input_obj=fill.model_dump(mode="json"),
+            output_obj={"price": fill.price, "size": fill.size, "side": fill.side.value},
+            payload=fill.model_dump(mode="json"),
+        )
+
+        # Mandatory post-order Kelly guard (PRD §15.1).
+        try:
+            positions = await self.clob.get_positions()
+            evaluate_exposure(
+                policy=self.policy,
+                state=self.state,
+                positions=positions,
+                open_order_ids_by_market={},
+            )
+        except KillSwitch as ks:
+            self.incidents.trip_killed(
+                code="POST_ORDER_KELLY_BREACH",
+                detail=str(ks),
+                actor="user_ws_consumer",
+            )
+            self.logger.log(
+                actor="user_ws_consumer",
+                action="kill_switch",
+                market_id=fill.market_id,
+                payload={"reason": str(ks)},
+            )
+
+    async def run_user_ws_consumer(self, ws: PolymarketUserWebSocket) -> None:
+        """Drain ``ws.queue`` forever, dispatching each event to runtime state.
+
+        Designed to be registered as a long-running task on the
+        ``SubagentScheduler``. Returns only on cancellation.
+        """
+        while True:
+            event = await ws.queue.get()
+            try:
+                await self.consume_user_ws_event(event)
+            except Exception as exc:  # noqa: BLE001
+                log.exception("user_ws_consume_failed", error=str(exc))
+
 
 def build_default_runtime(policy: Policy, log_path: str, *, db_path: str | None = None) -> Runtime:
     """Build a runtime with stub adapters — safe for OBSERVE / PAPER modes."""
@@ -448,6 +578,22 @@ async def run_forever(
                 period_seconds=float(order_sync_seconds),
                 fn=_safe_order_sync,
             )
+        )
+
+    # User-channel WebSocket — only register if we have full L2 trade
+    # credentials, otherwise the adapter would refuse to construct.
+    try:
+        creds = load_credentials()
+    except Exception:  # noqa: BLE001
+        creds = None
+    if creds is not None and creds.has_trade_credentials:
+        ws = PolymarketUserWebSocket(
+            credentials=creds,
+            markets_provider=lambda: [m.id for m in rt.watchlist.active()],
+        )
+        rt.scheduler.register_long_running("user_ws", ws.run)
+        rt.scheduler.register_long_running(
+            "user_ws_consumer", lambda: rt.run_user_ws_consumer(ws)
         )
 
     await rt.scheduler.start()
