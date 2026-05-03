@@ -221,7 +221,6 @@ async def test_subscribe_rejects_partial_credentials() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="runtime integration is codex-runtime-specific; tracked as follow-up")
 async def test_fill_event_updates_sqlite_position(tmp_path: Path) -> None:
     db_path = tmp_path / "polyflow.sqlite"
     store = SQLiteStore(db_path)
@@ -272,7 +271,6 @@ async def test_fill_event_updates_sqlite_position(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="runtime integration is codex-runtime-specific; tracked as follow-up")
 async def test_fill_event_refreshes_sentinel_timestamp(tmp_path: Path) -> None:
     policy = Policy()
     sentinel = PortfolioSentinel(
